@@ -1,0 +1,1826 @@
+﻿AddReference "System.Windows.Forms.dll"
+AddReference "System.Drawing.dll"
+Imports INV = Inventor
+Imports WF = System.Windows.Forms
+Imports SD = System.Drawing
+Imports IO = System.IO
+
+
+Sub Main()
+
+    Const TAG_NS As String = "INTERNAL_CAD_TAG"
+    Const TAG_KEY As String = "TagName"
+    Const DATE_KEY As String = "TaggedDate"
+    Const USER_KEY As String = "TaggedBy"
+    Const DOC_TYPE_KEY As String = "TaggedDocumentType"
+
+    Dim app As INV.Application = ThisApplication
+    Dim activeDoc As INV.Document = app.ActiveDocument
+
+    If activeDoc Is Nothing Then
+        WF.MessageBox.Show("No active document found.", "Internal CAD Tag")
+        Exit Sub
+    End If
+
+    Dim recorderFile As String = IO.Path.Combine(IO.Path.GetTempPath(), "InternalCadTag_ActionRecorder.txt")
+
+    Dim dlg As New WF.Form()
+    dlg.Text = "Internal CAD Tag Action Recorder"
+    dlg.FormBorderStyle = WF.FormBorderStyle.FixedDialog
+    dlg.StartPosition = WF.FormStartPosition.CenterParent
+    dlg.MinimizeBox = False
+    dlg.MaximizeBox = False
+    dlg.Width = 940
+    dlg.Height = 395
+
+    Dim bg As SD.Color = SD.Color.FromArgb(211, 211, 211)
+    dlg.BackColor = bg
+    dlg.ForeColor = SD.Color.FromArgb(32, 32, 32)
+
+    Dim leftPad As Integer = 16
+    Dim y As Integer = 18
+
+    Dim titleLbl As New WF.Label()
+    titleLbl.AutoSize = True
+    titleLbl.Left = leftPad
+    titleLbl.Top = y
+    titleLbl.Font = New SD.Font("Segoe UI", 10.0!, SD.FontStyle.Bold)
+    titleLbl.Text = "Choose an action:"
+    titleLbl.BackColor = SD.Color.Transparent
+    dlg.Controls.Add(titleLbl)
+
+    y += 32
+
+    Dim tagLbl As New WF.Label()
+    tagLbl.AutoSize = True
+    tagLbl.Left = leftPad
+    tagLbl.Top = y + 4
+    tagLbl.Text = "Custom tag name:"
+    tagLbl.BackColor = SD.Color.Transparent
+    dlg.Controls.Add(tagLbl)
+
+	Dim tagBox As New WF.TextBox()
+	tagBox.Left = 140
+	tagBox.Top = y
+	tagBox.Width = 760
+	tagBox.Text = "KRATOS_INTERNAL_CAD"
+	dlg.Controls.Add(tagBox)
+	
+	y += 30
+	
+	Dim detectedLbl As New WF.Label()
+	detectedLbl.AutoSize = True
+	detectedLbl.Left = leftPad
+	detectedLbl.Top = y + 4
+	detectedLbl.Text = "Detected tag:"
+	detectedLbl.BackColor = SD.Color.Transparent
+	dlg.Controls.Add(detectedLbl)
+	
+	Dim detectedBox As New WF.TextBox()
+	detectedBox.Left = 140
+	detectedBox.Top = y
+	detectedBox.Width = 760
+	detectedBox.ReadOnly = True
+	detectedBox.BackColor = SD.Color.White
+	detectedBox.Text = GetDetectedTagText(activeDoc, TAG_NS, TAG_KEY)
+	dlg.Controls.Add(detectedBox)
+	
+	y += 42
+
+    Dim addBold As New WF.Label()
+    addBold.AutoSize = True
+    addBold.Left = leftPad
+    addBold.Top = y
+    addBold.Font = New SD.Font("Segoe UI", 9.5!, SD.FontStyle.Bold)
+    addBold.Text = "WRITE TAG"
+    addBold.BackColor = SD.Color.Transparent
+    dlg.Controls.Add(addBold)
+
+    Dim addRest As New WF.Label()
+    addRest.AutoSize = True
+    addRest.Left = 170
+    addRest.Top = y
+    addRest.Text = "Write this tag to the current part or assembly"
+    addRest.BackColor = SD.Color.Transparent
+    dlg.Controls.Add(addRest)
+
+    y += 26
+
+    Dim scanBold As New WF.Label()
+    scanBold.AutoSize = True
+    scanBold.Left = leftPad
+    scanBold.Top = y
+    scanBold.Font = New SD.Font("Segoe UI", 9.5!, SD.FontStyle.Bold)
+    scanBold.Text = "CHECK TAG"
+    scanBold.BackColor = SD.Color.Transparent
+    dlg.Controls.Add(scanBold)
+
+    Dim scanRest As New WF.Label()
+    scanRest.AutoSize = True
+    scanRest.Left = 170
+    scanRest.Top = y
+    scanRest.Text = "Check current assembly for this exact tag name"
+    scanRest.BackColor = SD.Color.Transparent
+    dlg.Controls.Add(scanRest)
+
+    y += 26
+
+    Dim allBold As New WF.Label()
+    allBold.AutoSize = True
+    allBold.Left = leftPad
+    allBold.Top = y
+    allBold.Font = New SD.Font("Segoe UI", 9.5!, SD.FontStyle.Bold)
+    allBold.Text = "SEARCH ALL"
+    allBold.BackColor = SD.Color.Transparent
+    dlg.Controls.Add(allBold)
+
+    Dim allRest As New WF.Label()
+    allRest.AutoSize = True
+    allRest.Left = 170
+    allRest.Top = y
+    allRest.Text = "Find all internal CAD tags in the current assembly"
+    allRest.BackColor = SD.Color.Transparent
+    dlg.Controls.Add(allRest)
+
+    y += 26
+
+    Dim actionBold As New WF.Label()
+    actionBold.AutoSize = True
+    actionBold.Left = leftPad
+    actionBold.Top = y
+    actionBold.Font = New SD.Font("Segoe UI", 9.5!, SD.FontStyle.Bold)
+    actionBold.Text = "RECORDED ACTIONS"
+    actionBold.BackColor = SD.Color.Transparent
+    dlg.Controls.Add(actionBold)
+
+    Dim actionRest As New WF.Label()
+    actionRest.AutoSize = True
+    actionRest.Left = 170
+    actionRest.Top = y
+    actionRest.Text = "Run actions against tagged files and generate replayable iLogic code"
+    actionRest.BackColor = SD.Color.Transparent
+    dlg.Controls.Add(actionRest)
+
+    Dim btnWrite As New WF.Button()
+    btnWrite.Text = "WRITE TAG"
+    btnWrite.Width = 110
+    btnWrite.Height = 30
+    btnWrite.Left = 16
+    btnWrite.Top = 235
+    btnWrite.Tag = "WRITE_TAG"
+    AddHandler btnWrite.Click, AddressOf ActionButtonClick
+    dlg.Controls.Add(btnWrite)
+
+    Dim btnRemoveTag As New WF.Button()
+    btnRemoveTag.Text = "REMOVE TAG"
+    btnRemoveTag.Width = 110
+    btnRemoveTag.Height = 30
+    btnRemoveTag.Left = 136
+    btnRemoveTag.Top = 235
+    btnRemoveTag.Tag = "REMOVE_TAG"
+    AddHandler btnRemoveTag.Click, AddressOf ActionButtonClick
+    dlg.Controls.Add(btnRemoveTag)
+
+    Dim btnCheck As New WF.Button()
+    btnCheck.Text = "CHECK TAG"
+    btnCheck.Width = 110
+    btnCheck.Height = 30
+    btnCheck.Left = 256
+    btnCheck.Top = 235
+    btnCheck.Tag = "CHECK_TAG"
+    AddHandler btnCheck.Click, AddressOf ActionButtonClick
+    dlg.Controls.Add(btnCheck)
+
+    Dim btnSearchAll As New WF.Button()
+    btnSearchAll.Text = "SEARCH ALL"
+    btnSearchAll.Width = 110
+    btnSearchAll.Height = 30
+    btnSearchAll.Left = 376
+    btnSearchAll.Top = 235
+    btnSearchAll.Tag = "SEARCH_ALL"
+    AddHandler btnSearchAll.Click, AddressOf ActionButtonClick
+    dlg.Controls.Add(btnSearchAll)
+
+    Dim btnExamples As New WF.Button()
+    btnExamples.Text = "CODE HELP"
+    btnExamples.Width = 110
+    btnExamples.Height = 30
+    btnExamples.Left = 496
+    btnExamples.Top = 235
+    btnExamples.Tag = "CODE_HELP"
+    AddHandler btnExamples.Click, AddressOf ActionButtonClick
+    dlg.Controls.Add(btnExamples)
+
+    Dim btnSuppressOcc As New WF.Button()
+    btnSuppressOcc.Text = "SUPPRESS OCC"
+    btnSuppressOcc.Width = 130
+    btnSuppressOcc.Height = 30
+    btnSuppressOcc.Left = 16
+    btnSuppressOcc.Top = 280
+    btnSuppressOcc.Tag = "SUPPRESS_OCC"
+    AddHandler btnSuppressOcc.Click, AddressOf ActionButtonClick
+    dlg.Controls.Add(btnSuppressOcc)
+
+    Dim btnUnsuppressOcc As New WF.Button()
+    btnUnsuppressOcc.Text = "UNSUPPRESS OCC"
+    btnUnsuppressOcc.Width = 140
+    btnUnsuppressOcc.Height = 30
+    btnUnsuppressOcc.Left = 156
+    btnUnsuppressOcc.Top = 280
+    btnUnsuppressOcc.Tag = "UNSUPPRESS_OCC"
+    AddHandler btnUnsuppressOcc.Click, AddressOf ActionButtonClick
+    dlg.Controls.Add(btnUnsuppressOcc)
+
+    Dim btnSuppressFeature As New WF.Button()
+    btnSuppressFeature.Text = "SUPPRESS FEATURE"
+    btnSuppressFeature.Width = 150
+    btnSuppressFeature.Height = 30
+    btnSuppressFeature.Left = 306
+    btnSuppressFeature.Top = 280
+    btnSuppressFeature.Tag = "SUPPRESS_FEATURE"
+    AddHandler btnSuppressFeature.Click, AddressOf ActionButtonClick
+    dlg.Controls.Add(btnSuppressFeature)
+
+    Dim btnUnsuppressFeature As New WF.Button()
+    btnUnsuppressFeature.Text = "UNSUPPRESS FEATURE"
+    btnUnsuppressFeature.Width = 165
+    btnUnsuppressFeature.Height = 30
+    btnUnsuppressFeature.Left = 466
+    btnUnsuppressFeature.Top = 280
+    btnUnsuppressFeature.Tag = "UNSUPPRESS_FEATURE"
+    AddHandler btnUnsuppressFeature.Click, AddressOf ActionButtonClick
+    dlg.Controls.Add(btnUnsuppressFeature)
+
+    Dim btnShowCode As New WF.Button()
+    btnShowCode.Text = "SHOW GENERATED CODE"
+    btnShowCode.Width = 180
+    btnShowCode.Height = 30
+    btnShowCode.Left = 641
+    btnShowCode.Top = 280
+    btnShowCode.Tag = "SHOW_GENERATED_CODE"
+    AddHandler btnShowCode.Click, AddressOf ActionButtonClick
+    dlg.Controls.Add(btnShowCode)
+
+    Dim btnClear As New WF.Button()
+    btnClear.Text = "CLEAR STEPS"
+    btnClear.Width = 120
+    btnClear.Height = 30
+    btnClear.Left = 16
+    btnClear.Top = 325
+    btnClear.Tag = "CLEAR_STEPS"
+    AddHandler btnClear.Click, AddressOf ActionButtonClick
+    dlg.Controls.Add(btnClear)
+
+    Dim btnCancel As New WF.Button()
+    btnCancel.Text = "Cancel"
+    btnCancel.Width = 100
+    btnCancel.Height = 30
+    btnCancel.Left = 820
+    btnCancel.Top = 325
+    btnCancel.Tag = "CANCEL"
+    AddHandler btnCancel.Click, AddressOf ActionButtonClick
+    dlg.Controls.Add(btnCancel)
+
+    dlg.AcceptButton = btnWrite
+    dlg.CancelButton = btnCancel
+
+    dlg.ShowDialog()
+
+    If dlg.Tag Is Nothing Then Exit Sub
+
+    Dim actionName As String = CStr(dlg.Tag)
+
+    If actionName = "CANCEL" Then Exit Sub
+
+    Dim customTag As String = tagBox.Text.Trim()
+
+    If actionName <> "SEARCH_ALL" AndAlso actionName <> "CODE_HELP" AndAlso actionName <> "SHOW_GENERATED_CODE" AndAlso actionName <> "CLEAR_STEPS" AndAlso actionName <> "REMOVE_TAG" Then
+        If String.IsNullOrWhiteSpace(customTag) Then
+            WF.MessageBox.Show("Enter a custom tag name first.", "Internal CAD Tag")
+            Exit Sub
+        End If
+    End If
+
+    If actionName = "WRITE_TAG" Then
+
+        If activeDoc.DocumentType = INV.DocumentTypeEnum.kPartDocumentObject Then
+
+            Dim part As INV.PartDocument = TryCast(activeDoc, INV.PartDocument)
+
+            If part Is Nothing Then
+                WF.MessageBox.Show("Could not read active part document.", "Internal CAD Tag")
+                Exit Sub
+            End If
+
+            WriteFullTag(part, part.ComponentDefinition, TAG_NS, TAG_KEY, DATE_KEY, USER_KEY, DOC_TYPE_KEY, customTag, "Part")
+            part.Save()
+
+            WF.MessageBox.Show("Tag written to current part:" & vbCrLf & vbCrLf & customTag, "Internal CAD Tag")
+
+        ElseIf activeDoc.DocumentType = INV.DocumentTypeEnum.kAssemblyDocumentObject Then
+
+            Dim asm As INV.AssemblyDocument = TryCast(activeDoc, INV.AssemblyDocument)
+
+            If asm Is Nothing Then
+                WF.MessageBox.Show("Could not read active assembly document.", "Internal CAD Tag")
+                Exit Sub
+            End If
+
+            WriteFullTag(asm, asm.ComponentDefinition, TAG_NS, TAG_KEY, DATE_KEY, USER_KEY, DOC_TYPE_KEY, customTag, "Assembly")
+            asm.Save()
+
+            WF.MessageBox.Show("Tag written to current assembly:" & vbCrLf & vbCrLf & customTag, "Internal CAD Tag")
+
+        Else
+
+            WF.MessageBox.Show("Only part and assembly documents are supported.", "Internal CAD Tag")
+            Exit Sub
+
+        End If
+
+    ElseIf actionName = "REMOVE_TAG" Then
+
+        Dim removeScope As String = ShowRemoveTagScopeForm()
+
+        If String.IsNullOrWhiteSpace(removeScope) Then Exit Sub
+
+        If removeScope = "SPECIFIC" Then
+
+            Dim removedCount As Integer = RemoveTagFromSpecificComponent(activeDoc, TAG_NS)
+
+            WF.MessageBox.Show("Tag removal complete." & vbCrLf & vbCrLf & _
+                               "Scope: Current open file only" & vbCrLf & _
+                               "Removed tag locations: " & removedCount.ToString() & vbCrLf & vbCrLf & _
+                               "Note: each file can contain up to 2 tag locations:" & vbCrLf & _
+                               "1. Document level" & vbCrLf & _
+                               "2. Component definition level", _
+                               "Internal CAD Tag")
+
+        ElseIf removeScope = "ALL" Then
+
+            Dim topAsm As INV.AssemblyDocument = TryCast(activeDoc, INV.AssemblyDocument)
+
+            If topAsm Is Nothing Then
+                WF.MessageBox.Show("Open an assembly file before removing tags from all components.", "Internal CAD Tag")
+                Exit Sub
+            End If
+
+            Dim removedCount As Integer = RemoveTagsFromAllComponents(topAsm, TAG_NS)
+
+            WF.MessageBox.Show("Tag removal complete." & vbCrLf & vbCrLf & _
+                               "Scope: Current assembly and all referenced parts and assemblies" & vbCrLf & _
+                               "Removed tag locations: " & removedCount.ToString() & vbCrLf & vbCrLf & _
+                               "This number is tag locations removed, not file count." & vbCrLf & _
+                               "Each part or assembly can contain up to 2 tag locations:" & vbCrLf & _
+                               "1. Document level" & vbCrLf & _
+                               "2. Component definition level", _
+                               "Internal CAD Tag")
+
+        End If
+
+    ElseIf actionName = "CHECK_TAG" Then
+
+        Dim topAsm As INV.AssemblyDocument = TryCast(activeDoc, INV.AssemblyDocument)
+
+        If topAsm Is Nothing Then
+            WF.MessageBox.Show("Open an assembly file before using CHECK TAG.", "Internal CAD Tag")
+            Exit Sub
+        End If
+
+        SearchExactTag(topAsm, TAG_NS, TAG_KEY, DATE_KEY, USER_KEY, DOC_TYPE_KEY, customTag)
+
+    ElseIf actionName = "SEARCH_ALL" Then
+
+        Dim topAsm As INV.AssemblyDocument = TryCast(activeDoc, INV.AssemblyDocument)
+
+        If topAsm Is Nothing Then
+            WF.MessageBox.Show("Open an assembly file before using SEARCH ALL.", "Internal CAD Tag")
+            Exit Sub
+        End If
+
+        SearchAllTags(topAsm, TAG_NS, TAG_KEY, DATE_KEY, USER_KEY, DOC_TYPE_KEY)
+
+    ElseIf actionName = "CODE_HELP" Then
+
+        ShowCodeHelp(TAG_NS, TAG_KEY)
+
+    ElseIf actionName = "SUPPRESS_OCC" Then
+
+        Dim topAsm As INV.AssemblyDocument = TryCast(activeDoc, INV.AssemblyDocument)
+
+        If topAsm Is Nothing Then
+            WF.MessageBox.Show("Open an assembly file before using SUPPRESS OCC.", "Internal CAD Tag")
+            Exit Sub
+        End If
+
+        Dim count As Integer = SuppressOccurrencesByTag(topAsm.ComponentDefinition.Occurrences, TAG_NS, TAG_KEY, customTag)
+
+        AppendRecorderStep(recorderFile, "SUPPRESS_OCC|" & customTag)
+
+        WF.MessageBox.Show("Suppressed matching occurrences: " & count.ToString() & vbCrLf & vbCrLf & "Step recorded.", "Internal CAD Tag")
+
+    ElseIf actionName = "UNSUPPRESS_OCC" Then
+
+        Dim topAsm As INV.AssemblyDocument = TryCast(activeDoc, INV.AssemblyDocument)
+
+        If topAsm Is Nothing Then
+            WF.MessageBox.Show("Open an assembly file before using UNSUPPRESS OCC.", "Internal CAD Tag")
+            Exit Sub
+        End If
+
+        Dim count As Integer = UnsuppressOccurrencesByTag(topAsm.ComponentDefinition.Occurrences, TAG_NS, TAG_KEY, customTag)
+
+        AppendRecorderStep(recorderFile, "UNSUPPRESS_OCC|" & customTag)
+
+        WF.MessageBox.Show("Unsuppressed matching occurrences: " & count.ToString() & vbCrLf & vbCrLf & "Step recorded.", "Internal CAD Tag")
+
+	ElseIf actionName = "SUPPRESS_FEATURE" Then
+	
+	    Dim p As INV.PartDocument = TryCast(activeDoc, INV.PartDocument)
+	
+	    If p Is Nothing Then
+	        WF.MessageBox.Show("Open the part file first, then select the feature from the model tree.", "Internal CAD Tag")
+	        Exit Sub
+	    End If
+	
+	    Dim effectiveTag As String = ResolveEffectiveTagForActiveFile(activeDoc, TAG_NS, TAG_KEY, customTag)
+	
+	    If String.IsNullOrWhiteSpace(effectiveTag) Then Exit Sub
+	
+	    Dim pickedFeature As Object = PickPartFeature("Select the feature to suppress from the model tree.")
+	
+	    If pickedFeature Is Nothing Then Exit Sub
+	
+	    Dim featureName As String = GetFeatureName(pickedFeature)
+	
+	    If String.IsNullOrWhiteSpace(featureName) Then
+	        WF.MessageBox.Show("Could not read selected feature name.", "Internal CAD Tag")
+	        Exit Sub
+	    End If
+	
+	    Dim suppressCount As Integer = 0
+	
+	    Try
+	        Feature.IsActive(featureName) = False
+	        suppressCount = 1
+	    Catch
+	        suppressCount = 0
+	    End Try
+	
+	    If suppressCount > 0 Then
+	        Try
+	            p.Update()
+	            p.Save()
+	        Catch
+	        End Try
+	
+	        AppendRecorderStep(recorderFile, "SUPPRESS_FEATURE|" & effectiveTag & "|" & featureName)
+	
+	        WF.MessageBox.Show("Tagged feature suppressed and step recorded." & vbCrLf & vbCrLf & _
+	                           "Tag: " & effectiveTag & vbCrLf & _
+	                           "Feature: " & featureName, _
+	                           "Internal CAD Tag")
+	    Else
+	        WF.MessageBox.Show("Feature was selected, but Inventor did not suppress it." & vbCrLf & vbCrLf & _
+	                           "Feature: " & featureName, _
+	                           "Internal CAD Tag")
+	    End If
+	
+	ElseIf actionName = "UNSUPPRESS_FEATURE" Then
+	
+	    Dim p As INV.PartDocument = TryCast(activeDoc, INV.PartDocument)
+	
+	    If p Is Nothing Then
+	        WF.MessageBox.Show("Open the part file first, then select the feature from the model tree.", "Internal CAD Tag")
+	        Exit Sub
+	    End If
+	
+	    Dim effectiveTag As String = ResolveEffectiveTagForActiveFile(activeDoc, TAG_NS, TAG_KEY, customTag)
+	
+	    If String.IsNullOrWhiteSpace(effectiveTag) Then Exit Sub
+	
+	    Dim pickedFeature As Object = PickPartFeature("Select the feature to unsuppress from the model tree.")
+	
+	    If pickedFeature Is Nothing Then Exit Sub
+	
+	    Dim featureName As String = GetFeatureName(pickedFeature)
+	
+	    If String.IsNullOrWhiteSpace(featureName) Then
+	        WF.MessageBox.Show("Could not read selected feature name.", "Internal CAD Tag")
+	        Exit Sub
+	    End If
+	
+	    Dim unsuppressCount As Integer = 0
+	
+	    Try
+	        Feature.IsActive(featureName) = True
+	        unsuppressCount = 1
+	    Catch
+	        unsuppressCount = 0
+	    End Try
+	
+	    If unsuppressCount > 0 Then
+	        Try
+	            p.Update()
+	            p.Save()
+	        Catch
+	        End Try
+	
+	        AppendRecorderStep(recorderFile, "UNSUPPRESS_FEATURE|" & effectiveTag & "|" & featureName)
+	
+	        WF.MessageBox.Show("Tagged feature unsuppressed and step recorded." & vbCrLf & vbCrLf & _
+	                           "Tag: " & effectiveTag & vbCrLf & _
+	                           "Feature: " & featureName, _
+	                           "Internal CAD Tag")
+	    Else
+	        WF.MessageBox.Show("Feature was selected, but Inventor did not unsuppress it." & vbCrLf & vbCrLf & _
+	                           "Feature: " & featureName, _
+	                           "Internal CAD Tag")
+	    End If
+	
+    ElseIf actionName = "SHOW_GENERATED_CODE" Then
+
+        ShowGeneratedCodeFromRecorder(recorderFile, TAG_NS, TAG_KEY)
+
+    ElseIf actionName = "CLEAR_STEPS" Then
+
+        If IO.File.Exists(recorderFile) Then
+            IO.File.Delete(recorderFile)
+        End If
+
+        WF.MessageBox.Show("Recorded steps cleared.", "Internal CAD Tag")
+
+    End If
+
+End Sub
+
+Private Sub ActionButtonClick(sender As Object, e As System.EventArgs)
+
+    Dim btn As WF.Button = TryCast(sender, WF.Button)
+
+    If btn Is Nothing Then Exit Sub
+
+    Dim f As WF.Form = btn.FindForm()
+
+    If f Is Nothing Then Exit Sub
+
+    f.Tag = CStr(btn.Tag)
+    f.Close()
+
+End Sub
+
+Private Sub WriteFullTag(docObj As Object, defObj As Object, ns As String, tagKey As String, dateKey As String, userKey As String, docTypeKey As String, tagValue As String, docTypeValue As String)
+
+    Dim nowText As String = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+    Dim userText As String = System.Environment.UserName
+
+    WriteTagToObject(docObj, ns, tagKey, tagValue)
+    WriteTagToObject(defObj, ns, tagKey, tagValue)
+
+    WriteTagToObject(docObj, ns, dateKey, nowText)
+    WriteTagToObject(defObj, ns, dateKey, nowText)
+
+    WriteTagToObject(docObj, ns, userKey, userText)
+    WriteTagToObject(defObj, ns, userKey, userText)
+
+    WriteTagToObject(docObj, ns, docTypeKey, docTypeValue)
+    WriteTagToObject(defObj, ns, docTypeKey, docTypeValue)
+
+End Sub
+
+Private Sub WriteTagToObject(o As Object, ns As String, key As String, val As String)
+
+    On Error Resume Next
+
+    Dim sets As INV.AttributeSets = Nothing
+    sets = DirectCast(CallByName(o, "AttributeSets", CallType.Get), INV.AttributeSets)
+
+    If Err.Number <> 0 OrElse sets Is Nothing Then
+        Err.Clear()
+        Exit Sub
+    End If
+
+    Dim aset As INV.AttributeSet = Nothing
+    aset = sets.Item(ns)
+
+    If Err.Number <> 0 OrElse aset Is Nothing Then
+        Err.Clear()
+        aset = sets.Add(ns)
+    End If
+
+    Dim at As INV.Attribute = Nothing
+    at = aset.Item(key)
+
+    If Err.Number = 0 AndAlso at IsNot Nothing Then
+        at.Value = val
+    Else
+        Err.Clear()
+        aset.Add(key, INV.ValueTypeEnum.kStringType, val)
+    End If
+
+    On Error GoTo 0
+
+End Sub
+
+Private Function HasTagValue(o As Object, ns As String, key As String, wantedValue As String) As Boolean
+
+    Dim actualValue As String = GetTagValue(o, ns, key)
+
+    If String.IsNullOrWhiteSpace(actualValue) Then
+        HasTagValue = False
+    Else
+        HasTagValue = String.Compare(actualValue, wantedValue, True) = 0
+    End If
+
+End Function
+
+Private Function GetTagValue(o As Object, ns As String, key As String) As String
+
+    On Error Resume Next
+
+    Dim sets As INV.AttributeSets = Nothing
+    sets = DirectCast(CallByName(o, "AttributeSets", CallType.Get), INV.AttributeSets)
+
+    If Err.Number <> 0 OrElse sets Is Nothing Then
+        Err.Clear()
+        GetTagValue = ""
+        Exit Function
+    End If
+
+    Dim aset As INV.AttributeSet = Nothing
+    aset = sets.Item(ns)
+
+    If Err.Number <> 0 OrElse aset Is Nothing Then
+        Err.Clear()
+        GetTagValue = ""
+        Exit Function
+    End If
+
+    Dim at As INV.Attribute = Nothing
+    at = aset.Item(key)
+
+    If Err.Number <> 0 OrElse at Is Nothing Then
+        Err.Clear()
+        GetTagValue = ""
+        Exit Function
+    End If
+
+    GetTagValue = CStr(at.Value)
+
+    On Error GoTo 0
+
+End Function
+
+Private Function FirstNonBlank(a As String, b As String) As String
+
+    If Not String.IsNullOrWhiteSpace(a) Then
+        FirstNonBlank = a
+    Else
+        FirstNonBlank = b
+    End If
+
+End Function
+
+Private Sub SearchExactTag(topAsm As INV.AssemblyDocument, tagNs As String, tagKey As String, dateKey As String, userKey As String, docTypeKey As String, customTag As String)
+
+    Dim foundText As String = ""
+    Dim foundCount As Integer = 0
+    Dim checkedPartCount As Integer = 0
+    Dim checkedAsmCount As Integer = 0
+
+    checkedAsmCount += 1
+
+    If HasTagValue(topAsm, tagNs, tagKey, customTag) OrElse HasTagValue(topAsm.ComponentDefinition, tagNs, tagKey, customTag) Then
+
+        foundCount += 1
+
+        foundText &= "[TOP ASSEMBLY]" & vbCrLf
+        foundText &= topAsm.DisplayName & vbCrLf
+        foundText &= topAsm.FullFileName & vbCrLf
+        foundText &= "Tag: " & customTag & vbCrLf & vbCrLf
+
+    End If
+
+    Dim d As INV.Document
+
+    For Each d In topAsm.AllReferencedDocuments
+
+        If d Is Nothing Then Continue For
+        If String.IsNullOrEmpty(d.FullFileName) Then Continue For
+
+        If d.DocumentType = INV.DocumentTypeEnum.kPartDocumentObject Then
+
+            checkedPartCount += 1
+
+            Dim p As INV.PartDocument = TryCast(d, INV.PartDocument)
+
+            If p Is Nothing Then Continue For
+
+            If HasTagValue(p, tagNs, tagKey, customTag) OrElse HasTagValue(p.ComponentDefinition, tagNs, tagKey, customTag) Then
+
+                foundCount += 1
+
+                foundText &= "[PART]" & vbCrLf
+                foundText &= p.DisplayName & vbCrLf
+                foundText &= p.FullFileName & vbCrLf
+                foundText &= "Tag: " & customTag & vbCrLf & vbCrLf
+
+            End If
+
+        ElseIf d.DocumentType = INV.DocumentTypeEnum.kAssemblyDocumentObject Then
+
+            checkedAsmCount += 1
+
+            Dim subAsm As INV.AssemblyDocument = TryCast(d, INV.AssemblyDocument)
+
+            If subAsm Is Nothing Then Continue For
+
+            If HasTagValue(subAsm, tagNs, tagKey, customTag) OrElse HasTagValue(subAsm.ComponentDefinition, tagNs, tagKey, customTag) Then
+
+                foundCount += 1
+
+                foundText &= "[ASSEMBLY]" & vbCrLf
+                foundText &= subAsm.DisplayName & vbCrLf
+                foundText &= subAsm.FullFileName & vbCrLf
+                foundText &= "Tag: " & customTag & vbCrLf & vbCrLf
+
+            End If
+
+        End If
+
+    Next
+
+    ShowResults("Exact Tag Search Results", checkedAsmCount, checkedPartCount, foundCount, customTag, foundText)
+
+End Sub
+
+Private Sub SearchAllTags(topAsm As INV.AssemblyDocument, tagNs As String, tagKey As String, dateKey As String, userKey As String, docTypeKey As String)
+
+    Dim foundText As String = ""
+    Dim foundCount As Integer = 0
+    Dim checkedPartCount As Integer = 0
+    Dim checkedAsmCount As Integer = 0
+
+    checkedAsmCount += 1
+
+    Dim topTag As String = GetTagValue(topAsm, tagNs, tagKey)
+
+    If String.IsNullOrWhiteSpace(topTag) Then
+        topTag = GetTagValue(topAsm.ComponentDefinition, tagNs, tagKey)
+    End If
+
+    If Not String.IsNullOrWhiteSpace(topTag) Then
+
+        foundCount += 1
+
+        foundText &= "[TOP ASSEMBLY]" & vbCrLf
+        foundText &= topAsm.DisplayName & vbCrLf
+        foundText &= topAsm.FullFileName & vbCrLf
+        foundText &= "Tag: " & topTag & vbCrLf
+        foundText &= "Tagged Date: " & FirstNonBlank(GetTagValue(topAsm, tagNs, dateKey), GetTagValue(topAsm.ComponentDefinition, tagNs, dateKey)) & vbCrLf
+        foundText &= "Tagged By: " & FirstNonBlank(GetTagValue(topAsm, tagNs, userKey), GetTagValue(topAsm.ComponentDefinition, tagNs, userKey)) & vbCrLf
+        foundText &= "Tagged Type: " & FirstNonBlank(GetTagValue(topAsm, tagNs, docTypeKey), GetTagValue(topAsm.ComponentDefinition, tagNs, docTypeKey)) & vbCrLf & vbCrLf
+
+    End If
+
+    Dim d As INV.Document
+
+    For Each d In topAsm.AllReferencedDocuments
+
+        If d Is Nothing Then Continue For
+        If String.IsNullOrEmpty(d.FullFileName) Then Continue For
+
+        If d.DocumentType = INV.DocumentTypeEnum.kPartDocumentObject Then
+
+            checkedPartCount += 1
+
+            Dim p As INV.PartDocument = TryCast(d, INV.PartDocument)
+
+            If p Is Nothing Then Continue For
+
+            Dim partTag As String = GetTagValue(p, tagNs, tagKey)
+
+            If String.IsNullOrWhiteSpace(partTag) Then
+                partTag = GetTagValue(p.ComponentDefinition, tagNs, tagKey)
+            End If
+
+            If Not String.IsNullOrWhiteSpace(partTag) Then
+
+                foundCount += 1
+
+                foundText &= "[PART]" & vbCrLf
+                foundText &= p.DisplayName & vbCrLf
+                foundText &= p.FullFileName & vbCrLf
+                foundText &= "Tag: " & partTag & vbCrLf
+                foundText &= "Tagged Date: " & FirstNonBlank(GetTagValue(p, tagNs, dateKey), GetTagValue(p.ComponentDefinition, tagNs, dateKey)) & vbCrLf
+                foundText &= "Tagged By: " & FirstNonBlank(GetTagValue(p, tagNs, userKey), GetTagValue(p.ComponentDefinition, tagNs, userKey)) & vbCrLf
+                foundText &= "Tagged Type: " & FirstNonBlank(GetTagValue(p, tagNs, docTypeKey), GetTagValue(p.ComponentDefinition, tagNs, docTypeKey)) & vbCrLf & vbCrLf
+
+            End If
+
+        ElseIf d.DocumentType = INV.DocumentTypeEnum.kAssemblyDocumentObject Then
+
+            checkedAsmCount += 1
+
+            Dim subAsm As INV.AssemblyDocument = TryCast(d, INV.AssemblyDocument)
+
+            If subAsm Is Nothing Then Continue For
+
+            Dim asmTag As String = GetTagValue(subAsm, tagNs, tagKey)
+
+            If String.IsNullOrWhiteSpace(asmTag) Then
+                asmTag = GetTagValue(subAsm.ComponentDefinition, tagNs, tagKey)
+            End If
+
+            If Not String.IsNullOrWhiteSpace(asmTag) Then
+
+                foundCount += 1
+
+                foundText &= "[ASSEMBLY]" & vbCrLf
+                foundText &= subAsm.DisplayName & vbCrLf
+                foundText &= subAsm.FullFileName & vbCrLf
+                foundText &= "Tag: " & asmTag & vbCrLf
+                foundText &= "Tagged Date: " & FirstNonBlank(GetTagValue(subAsm, tagNs, dateKey), GetTagValue(subAsm.ComponentDefinition, tagNs, dateKey)) & vbCrLf
+                foundText &= "Tagged By: " & FirstNonBlank(GetTagValue(subAsm, tagNs, userKey), GetTagValue(subAsm.ComponentDefinition, tagNs, userKey)) & vbCrLf
+                foundText &= "Tagged Type: " & FirstNonBlank(GetTagValue(subAsm, tagNs, docTypeKey), GetTagValue(subAsm.ComponentDefinition, tagNs, docTypeKey)) & vbCrLf & vbCrLf
+
+            End If
+
+        End If
+
+    Next
+
+    ShowResults("All Tag Search Results", checkedAsmCount, checkedPartCount, foundCount, "ALL INTERNAL CAD TAGS", foundText)
+
+End Sub
+
+Private Sub ShowResults(title As String, checkedAsmCount As Integer, checkedPartCount As Integer, foundCount As Integer, searchedTag As String, foundText As String)
+
+    If foundCount = 0 Then
+
+        WF.MessageBox.Show("Checked assemblies: " & checkedAsmCount.ToString() & vbCrLf & _
+                           "Checked parts: " & checkedPartCount.ToString() & vbCrLf & _
+                           "Matching tagged files: 0" & vbCrLf & _
+                           "Search: " & searchedTag, _
+                           title)
+
+    Else
+
+        Dim resultForm As New WF.Form()
+        resultForm.Text = title
+        resultForm.StartPosition = WF.FormStartPosition.CenterParent
+        resultForm.Width = 860
+        resultForm.Height = 540
+
+        Dim resultBox As New WF.TextBox()
+        resultBox.Multiline = True
+        resultBox.ReadOnly = True
+        resultBox.ScrollBars = WF.ScrollBars.Both
+        resultBox.WordWrap = False
+        resultBox.Dock = WF.DockStyle.Fill
+        resultBox.Text = "Checked assemblies: " & checkedAsmCount.ToString() & vbCrLf & _
+                         "Checked parts: " & checkedPartCount.ToString() & vbCrLf & _
+                         "Matching tagged files: " & foundCount.ToString() & vbCrLf & _
+                         "Search: " & searchedTag & vbCrLf & vbCrLf & _
+                         foundText
+
+        resultForm.Controls.Add(resultBox)
+        resultForm.ShowDialog()
+
+    End If
+
+End Sub
+
+Private Function SuppressOccurrencesByTag(occs As INV.ComponentOccurrences, tagNs As String, tagKey As String, wantedTag As String) As Integer
+
+    Dim count As Integer = 0
+    Dim occ As INV.ComponentOccurrence
+
+    For Each occ In occs
+
+        On Error Resume Next
+
+        Dim occDoc As INV.Document = Nothing
+        occDoc = occ.Definition.Document
+
+        If Err.Number = 0 AndAlso occDoc IsNot Nothing Then
+
+            If HasTagValue(occDoc, tagNs, tagKey, wantedTag) Then
+                If Not occ.Suppressed Then
+                    occ.Suppress()
+                    count += 1
+                End If
+            ElseIf occDoc.DocumentType = INV.DocumentTypeEnum.kAssemblyDocumentObject Then
+                Dim subDef As INV.AssemblyComponentDefinition = TryCast(occ.Definition, INV.AssemblyComponentDefinition)
+                If subDef IsNot Nothing Then
+                    count += SuppressOccurrencesByTag(subDef.Occurrences, tagNs, tagKey, wantedTag)
+                End If
+            End If
+
+        End If
+
+        Err.Clear()
+        On Error GoTo 0
+
+    Next
+
+    SuppressOccurrencesByTag = count
+
+End Function
+
+Private Function UnsuppressOccurrencesByTag(occs As INV.ComponentOccurrences, tagNs As String, tagKey As String, wantedTag As String) As Integer
+
+    Dim count As Integer = 0
+    Dim occ As INV.ComponentOccurrence
+
+    For Each occ In occs
+
+        On Error Resume Next
+
+        If occ.Suppressed Then
+            occ.Unsuppress()
+        End If
+
+        Dim occDoc As INV.Document = Nothing
+        occDoc = occ.Definition.Document
+
+        If Err.Number = 0 AndAlso occDoc IsNot Nothing Then
+
+            If HasTagValue(occDoc, tagNs, tagKey, wantedTag) Then
+                count += 1
+            ElseIf occDoc.DocumentType = INV.DocumentTypeEnum.kAssemblyDocumentObject Then
+                Dim subDef As INV.AssemblyComponentDefinition = TryCast(occ.Definition, INV.AssemblyComponentDefinition)
+                If subDef IsNot Nothing Then
+                    count += UnsuppressOccurrencesByTag(subDef.Occurrences, tagNs, tagKey, wantedTag)
+                End If
+            Else
+                occ.Suppress()
+            End If
+
+        End If
+
+        Err.Clear()
+        On Error GoTo 0
+
+    Next
+
+    UnsuppressOccurrencesByTag = count
+
+End Function
+
+Private Sub AppendRecorderStep(recorderFile As String, stepText As String)
+
+    IO.File.AppendAllText(recorderFile, stepText & vbCrLf)
+
+End Sub
+
+Private Sub ShowGeneratedCodeFromRecorder(recorderFile As String, tagNs As String, tagKey As String)
+
+    If Not IO.File.Exists(recorderFile) Then
+        WF.MessageBox.Show("No recorded steps found.", "Generated iLogic Code")
+        Exit Sub
+    End If
+
+    Dim lines() As String = IO.File.ReadAllLines(recorderFile)
+
+    If lines.Length = 0 Then
+        WF.MessageBox.Show("No recorded steps found.", "Generated iLogic Code")
+        Exit Sub
+    End If
+
+    Dim codeText As String = BuildGeneratedCode(lines, tagNs, tagKey)
+
+    Dim resultForm As New WF.Form()
+    resultForm.Text = "Generated iLogic Code"
+    resultForm.StartPosition = WF.FormStartPosition.CenterParent
+    resultForm.Width = 1050
+    resultForm.Height = 760
+
+    Dim resultBox As New WF.TextBox()
+    resultBox.Multiline = True
+    resultBox.ReadOnly = False
+    resultBox.ScrollBars = WF.ScrollBars.Both
+    resultBox.WordWrap = False
+    resultBox.Dock = WF.DockStyle.Fill
+    resultBox.Font = New SD.Font("Consolas", 9.0!)
+    resultBox.Text = codeText
+
+    resultForm.Controls.Add(resultBox)
+    resultForm.ShowDialog()
+
+End Sub
+
+Private Function BuildGeneratedCode(lines() As String, tagNs As String, tagKey As String) As String
+
+    Dim s As String = ""
+
+    s &= "AddReference ""System.Windows.Forms.dll""" & vbCrLf
+    s &= "Imports INV = Inventor" & vbCrLf
+    s &= "Imports WF = System.Windows.Forms" & vbCrLf
+    s &= "Imports IO = System.IO" & vbCrLf
+    s &= vbCrLf
+    s &= "Sub Main()" & vbCrLf
+    s &= "    Const TAG_NS As String = """ & tagNs & """" & vbCrLf
+    s &= "    Const TAG_KEY As String = """ & tagKey & """" & vbCrLf
+    s &= vbCrLf
+    s &= "    Dim app As INV.Application = ThisApplication" & vbCrLf
+    s &= "    Dim activeDoc As INV.Document = app.ActiveDocument" & vbCrLf
+    s &= "    Dim asm As INV.AssemblyDocument = TryCast(activeDoc, INV.AssemblyDocument)" & vbCrLf
+    s &= "    Dim part As INV.PartDocument = TryCast(activeDoc, INV.PartDocument)" & vbCrLf
+    s &= "    Dim txn As INV.Transaction = Nothing" & vbCrLf
+    s &= vbCrLf
+    s &= "    Try" & vbCrLf
+    s &= "        If activeDoc IsNot Nothing Then" & vbCrLf
+    s &= "            txn = app.TransactionManager.StartTransaction(activeDoc, ""Internal CAD Tag Replay"")" & vbCrLf
+    s &= "        End If" & vbCrLf
+    s &= vbCrLf
+
+    Dim i As Integer
+
+    For i = 0 To lines.Length - 1
+
+        Dim lineText As String = lines(i).Trim()
+
+        If String.IsNullOrWhiteSpace(lineText) Then Continue For
+
+        Dim parts() As String = lineText.Split("|"c)
+
+        If parts.Length = 0 Then Continue For
+
+        Dim actionName As String = parts(0)
+
+        If actionName = "SUPPRESS_OCC" AndAlso parts.Length >= 2 Then
+
+            s &= "        If asm Is Nothing Then" & vbCrLf
+            s &= "            WF.MessageBox.Show(""Open an assembly first for occurrence suppression."")" & vbCrLf
+            s &= "            Exit Sub" & vbCrLf
+            s &= "        End If" & vbCrLf
+            s &= "        SuppressOccurrencesByTag(asm.ComponentDefinition.Occurrences, TAG_NS, TAG_KEY, """ & EscapeForVb(parts(1)) & """)" & vbCrLf
+            s &= vbCrLf
+
+        ElseIf actionName = "UNSUPPRESS_OCC" AndAlso parts.Length >= 2 Then
+
+            s &= "        If asm Is Nothing Then" & vbCrLf
+            s &= "            WF.MessageBox.Show(""Open an assembly first for occurrence unsuppression."")" & vbCrLf
+            s &= "            Exit Sub" & vbCrLf
+            s &= "        End If" & vbCrLf
+            s &= "        UnsuppressOccurrencesByTag(asm.ComponentDefinition.Occurrences, TAG_NS, TAG_KEY, """ & EscapeForVb(parts(1)) & """)" & vbCrLf
+            s &= vbCrLf
+
+        ElseIf actionName = "SUPPRESS_FEATURE" AndAlso parts.Length >= 3 Then
+
+            s &= "        If asm IsNot Nothing Then" & vbCrLf
+            s &= "            SetFeatureActiveByTag(asm, TAG_NS, TAG_KEY, """ & EscapeForVb(parts(1)) & """, """ & EscapeForVb(parts(2)) & """, False)" & vbCrLf
+            s &= "        ElseIf part IsNot Nothing Then" & vbCrLf
+            s &= "            If HasTagValue(part, TAG_NS, TAG_KEY, """ & EscapeForVb(parts(1)) & """) OrElse HasTagValue(part.ComponentDefinition, TAG_NS, TAG_KEY, """ & EscapeForVb(parts(1)) & """) Then" & vbCrLf
+            s &= "                Feature.IsActive(""" & EscapeForVb(parts(2)) & """) = False" & vbCrLf
+            s &= "            End If" & vbCrLf
+            s &= "        End If" & vbCrLf
+            s &= vbCrLf
+
+        ElseIf actionName = "UNSUPPRESS_FEATURE" AndAlso parts.Length >= 3 Then
+
+            s &= "        If asm IsNot Nothing Then" & vbCrLf
+            s &= "            SetFeatureActiveByTag(asm, TAG_NS, TAG_KEY, """ & EscapeForVb(parts(1)) & """, """ & EscapeForVb(parts(2)) & """, True)" & vbCrLf
+            s &= "        ElseIf part IsNot Nothing Then" & vbCrLf
+            s &= "            If HasTagValue(part, TAG_NS, TAG_KEY, """ & EscapeForVb(parts(1)) & """) OrElse HasTagValue(part.ComponentDefinition, TAG_NS, TAG_KEY, """ & EscapeForVb(parts(1)) & """) Then" & vbCrLf
+            s &= "                Feature.IsActive(""" & EscapeForVb(parts(2)) & """) = True" & vbCrLf
+            s &= "            End If" & vbCrLf
+            s &= "        End If" & vbCrLf
+            s &= vbCrLf
+
+        End If
+
+    Next
+
+    s &= "        If txn IsNot Nothing Then" & vbCrLf
+    s &= "            txn.End()" & vbCrLf
+    s &= "            txn = Nothing" & vbCrLf
+    s &= "        End If" & vbCrLf
+    s &= vbCrLf
+    s &= "        InventorVb.DocumentUpdate(True)" & vbCrLf
+    s &= vbCrLf
+    s &= "    Catch ex As Exception" & vbCrLf
+    s &= "        If txn IsNot Nothing Then" & vbCrLf
+    s &= "            Try" & vbCrLf
+    s &= "                txn.Abort()" & vbCrLf
+    s &= "            Catch" & vbCrLf
+    s &= "            End Try" & vbCrLf
+    s &= "        End If" & vbCrLf
+    s &= vbCrLf
+    s &= "        WF.MessageBox.Show(ex.Message, ""Internal CAD Tag Replay Error"")" & vbCrLf
+    s &= "        Exit Sub" & vbCrLf
+    s &= "    End Try" & vbCrLf
+    s &= vbCrLf
+    s &= "End Sub" & vbCrLf
+    s &= vbCrLf
+
+    s &= GetGeneratedHelperCode()
+
+    BuildGeneratedCode = s
+
+End Function
+
+Private Function EscapeForVb(value As String) As String
+
+    EscapeForVb = value.Replace("""", """""")
+
+End Function
+
+Private Function GetGeneratedHelperCode() As String
+
+    Dim s As String = ""
+
+    s &= "Private Function HasTagValue(o As Object, ns As String, key As String, wantedValue As String) As Boolean" & vbCrLf
+    s &= "    Dim actualValue As String = GetTagValue(o, ns, key)" & vbCrLf
+    s &= "    If String.IsNullOrWhiteSpace(actualValue) Then" & vbCrLf
+    s &= "        HasTagValue = False" & vbCrLf
+    s &= "    Else" & vbCrLf
+    s &= "        HasTagValue = String.Compare(actualValue, wantedValue, True) = 0" & vbCrLf
+    s &= "    End If" & vbCrLf
+    s &= "End Function" & vbCrLf
+    s &= vbCrLf
+
+    s &= "Private Function GetTagValue(o As Object, ns As String, key As String) As String" & vbCrLf
+    s &= "    On Error Resume Next" & vbCrLf
+    s &= "    Dim sets As INV.AttributeSets = Nothing" & vbCrLf
+    s &= "    sets = DirectCast(CallByName(o, ""AttributeSets"", CallType.Get), INV.AttributeSets)" & vbCrLf
+    s &= "    If Err.Number <> 0 OrElse sets Is Nothing Then Err.Clear() : GetTagValue = """" : Exit Function" & vbCrLf
+    s &= "    Dim aset As INV.AttributeSet = Nothing" & vbCrLf
+    s &= "    aset = sets.Item(ns)" & vbCrLf
+    s &= "    If Err.Number <> 0 OrElse aset Is Nothing Then Err.Clear() : GetTagValue = """" : Exit Function" & vbCrLf
+    s &= "    Dim at As INV.Attribute = Nothing" & vbCrLf
+    s &= "    at = aset.Item(key)" & vbCrLf
+    s &= "    If Err.Number <> 0 OrElse at Is Nothing Then Err.Clear() : GetTagValue = """" : Exit Function" & vbCrLf
+    s &= "    GetTagValue = CStr(at.Value)" & vbCrLf
+    s &= "    On Error GoTo 0" & vbCrLf
+    s &= "End Function" & vbCrLf
+    s &= vbCrLf
+
+    s &= "Private Function SuppressOccurrencesByTag(occs As INV.ComponentOccurrences, tagNs As String, tagKey As String, wantedTag As String) As Integer" & vbCrLf
+    s &= "    Dim count As Integer = 0" & vbCrLf
+    s &= "    Dim occ As INV.ComponentOccurrence" & vbCrLf
+    s &= "    For Each occ In occs" & vbCrLf
+    s &= "        On Error Resume Next" & vbCrLf
+    s &= "        Dim occDoc As INV.Document = Nothing" & vbCrLf
+    s &= "        occDoc = occ.Definition.Document" & vbCrLf
+    s &= "        If Err.Number = 0 AndAlso occDoc IsNot Nothing Then" & vbCrLf
+    s &= "            If HasTagValue(occDoc, tagNs, tagKey, wantedTag) Then" & vbCrLf
+    s &= "                If Not occ.Suppressed Then occ.Suppress() : count += 1" & vbCrLf
+    s &= "            ElseIf occDoc.DocumentType = INV.DocumentTypeEnum.kAssemblyDocumentObject Then" & vbCrLf
+    s &= "                Dim subDef As INV.AssemblyComponentDefinition = TryCast(occ.Definition, INV.AssemblyComponentDefinition)" & vbCrLf
+    s &= "                If subDef IsNot Nothing Then count += SuppressOccurrencesByTag(subDef.Occurrences, tagNs, tagKey, wantedTag)" & vbCrLf
+    s &= "            End If" & vbCrLf
+    s &= "        End If" & vbCrLf
+    s &= "        Err.Clear()" & vbCrLf
+    s &= "        On Error GoTo 0" & vbCrLf
+    s &= "    Next" & vbCrLf
+    s &= "    SuppressOccurrencesByTag = count" & vbCrLf
+    s &= "End Function" & vbCrLf
+    s &= vbCrLf
+
+    s &= "Private Function UnsuppressOccurrencesByTag(occs As INV.ComponentOccurrences, tagNs As String, tagKey As String, wantedTag As String) As Integer" & vbCrLf
+    s &= "    Dim count As Integer = 0" & vbCrLf
+    s &= "    Dim occ As INV.ComponentOccurrence" & vbCrLf
+    s &= "    For Each occ In occs" & vbCrLf
+    s &= "        On Error Resume Next" & vbCrLf
+    s &= "        If occ.Suppressed Then occ.Unsuppress()" & vbCrLf
+    s &= "        Dim occDoc As INV.Document = Nothing" & vbCrLf
+    s &= "        occDoc = occ.Definition.Document" & vbCrLf
+    s &= "        If Err.Number = 0 AndAlso occDoc IsNot Nothing Then" & vbCrLf
+    s &= "            If HasTagValue(occDoc, tagNs, tagKey, wantedTag) Then" & vbCrLf
+    s &= "                count += 1" & vbCrLf
+    s &= "            ElseIf occDoc.DocumentType = INV.DocumentTypeEnum.kAssemblyDocumentObject Then" & vbCrLf
+    s &= "                Dim subDef As INV.AssemblyComponentDefinition = TryCast(occ.Definition, INV.AssemblyComponentDefinition)" & vbCrLf
+    s &= "                If subDef IsNot Nothing Then count += UnsuppressOccurrencesByTag(subDef.Occurrences, tagNs, tagKey, wantedTag)" & vbCrLf
+    s &= "            Else" & vbCrLf
+    s &= "                occ.Suppress()" & vbCrLf
+    s &= "            End If" & vbCrLf
+    s &= "        End If" & vbCrLf
+    s &= "        Err.Clear()" & vbCrLf
+    s &= "        On Error GoTo 0" & vbCrLf
+    s &= "    Next" & vbCrLf
+    s &= "    UnsuppressOccurrencesByTag = count" & vbCrLf
+    s &= "End Function" & vbCrLf
+    s &= vbCrLf
+
+    s &= "Private Function SetFeatureActiveByTag(topAsm As INV.AssemblyDocument, tagNs As String, tagKey As String, wantedTag As String, featureName As String, activeState As Boolean) As Integer" & vbCrLf
+    s &= "    Dim count As Integer = 0" & vbCrLf
+    s &= "    Dim tempRuleName As String = ""__TEMP_TAG_FEATURE_ACTIVE""" & vbCrLf
+    s &= "    Dim tempRuleFolder As String = GetFirstExternalRuleDirectory()" & vbCrLf
+    s &= "    If String.IsNullOrWhiteSpace(tempRuleFolder) Then WF.MessageBox.Show(""No iLogic external rule directory was found."", ""Internal CAD Tag"") : Return 0" & vbCrLf
+    s &= "    Dim tempRulePath As String = IO.Path.Combine(tempRuleFolder, tempRuleName & "".vb"")" & vbCrLf
+    s &= "    Dim ruleText As String = """"" & vbCrLf
+    s &= "    ruleText &= ""Sub Main()"" & vbCrLf" & vbCrLf
+    s &= "    ruleText &= ""    Feature.IsActive("""""" & featureName & """""") = "" & If(activeState, ""True"", ""False"") & vbCrLf" & vbCrLf
+    s &= "    ruleText &= ""End Sub"" & vbCrLf" & vbCrLf
+    s &= "    IO.File.WriteAllText(tempRulePath, ruleText)" & vbCrLf
+    s &= "    Dim d As INV.Document" & vbCrLf
+    s &= "    For Each d In topAsm.AllReferencedDocuments" & vbCrLf
+    s &= "        If d Is Nothing Then Continue For" & vbCrLf
+    s &= "        If d.DocumentType <> INV.DocumentTypeEnum.kPartDocumentObject Then Continue For" & vbCrLf
+    s &= "        Dim p As INV.PartDocument = TryCast(d, INV.PartDocument)" & vbCrLf
+    s &= "        If p Is Nothing Then Continue For" & vbCrLf
+    s &= "        If HasTagValue(p, tagNs, tagKey, wantedTag) OrElse HasTagValue(p.ComponentDefinition, tagNs, tagKey, wantedTag) Then" & vbCrLf
+    s &= "            Try" & vbCrLf
+    s &= "                iLogicVb.Automation.RunExternalRule(p, tempRuleName)" & vbCrLf
+    s &= "                count += 1" & vbCrLf
+    s &= "            Catch ex As Exception" & vbCrLf
+    s &= "                WF.MessageBox.Show(""Failed on tagged part:"" & vbCrLf & p.FullFileName & vbCrLf & vbCrLf & ""Rule path:"" & vbCrLf & tempRulePath & vbCrLf & vbCrLf & ex.Message, ""Internal CAD Tag"")" & vbCrLf
+    s &= "            End Try" & vbCrLf
+    s &= "        End If" & vbCrLf
+    s &= "    Next" & vbCrLf
+    s &= "    Try" & vbCrLf
+    s &= "        If IO.File.Exists(tempRulePath) Then IO.File.Delete(tempRulePath)" & vbCrLf
+    s &= "    Catch" & vbCrLf
+    s &= "    End Try" & vbCrLf
+    s &= "    SetFeatureActiveByTag = count" & vbCrLf
+    s &= "End Function" & vbCrLf
+    s &= vbCrLf
+
+    s &= "Private Function GetFirstExternalRuleDirectory() As String" & vbCrLf
+    s &= "    Try" & vbCrLf
+    s &= "        Dim dirs As Object = iLogicVb.Automation.FileOptions.ExternalRuleDirectories" & vbCrLf
+    s &= "        Dim d As String" & vbCrLf
+    s &= "        For Each d In dirs" & vbCrLf
+    s &= "            If Not String.IsNullOrWhiteSpace(d) Then" & vbCrLf
+    s &= "                If IO.Directory.Exists(d) Then Return d" & vbCrLf
+    s &= "            End If" & vbCrLf
+    s &= "        Next" & vbCrLf
+    s &= "    Catch" & vbCrLf
+    s &= "    End Try" & vbCrLf
+    s &= "    Return """"" & vbCrLf
+    s &= "End Function" & vbCrLf
+
+    GetGeneratedHelperCode = s
+
+End Function
+
+Private Sub ShowCodeHelp(tagNs As String, tagKey As String)
+
+    Dim helpText As String = ""
+
+    helpText &= "Internal CAD Tag Action Recorder" & vbCrLf
+    helpText &= "===============================" & vbCrLf & vbCrLf
+
+    helpText &= "Purpose" & vbCrLf
+    helpText &= "-------" & vbCrLf
+    helpText &= "This tool stores an internal CAD tag on parts or assemblies, then uses that tag later to find and control files." & vbCrLf
+    helpText &= "The recorded steps can generate replayable iLogic code that runs the same actions again." & vbCrLf & vbCrLf
+
+    helpText &= "Stored tag structure" & vbCrLf
+    helpText &= "--------------------" & vbCrLf
+    helpText &= "AttributeSet: " & tagNs & vbCrLf
+    helpText &= "Attribute:    " & tagKey & vbCrLf
+    helpText &= "Value:        User selected tag name" & vbCrLf & vbCrLf
+
+    helpText &= "Recorder workflow" & vbCrLf
+    helpText &= "-----------------" & vbCrLf
+    helpText &= "1. Type or detect a tag." & vbCrLf
+    helpText &= "2. Press SUPPRESS OCC, UNSUPPRESS OCC, SUPPRESS FEATURE, or UNSUPPRESS FEATURE." & vbCrLf
+    helpText &= "3. Each action is written to:" & vbCrLf
+    helpText &= IO.Path.Combine(IO.Path.GetTempPath(), "InternalCadTag_ActionRecorder.txt") & vbCrLf
+    helpText &= "4. Press SHOW GENERATED CODE to create a copyable iLogic rule." & vbCrLf & vbCrLf
+
+    helpText &= "Important feature behavior" & vbCrLf
+    helpText &= "--------------------------" & vbCrLf
+    helpText &= "Part level feature suppression uses:" & vbCrLf
+    helpText &= "Feature.IsActive(""FeatureName"") = False" & vbCrLf
+    helpText &= "Feature.IsActive(""FeatureName"") = True" & vbCrLf & vbCrLf
+
+    helpText &= "Assembly level feature replay uses a temporary external iLogic rule." & vbCrLf
+    helpText &= "The assembly finds tagged parts, writes a temp external rule, then runs that rule against each tagged part document." & vbCrLf & vbCrLf
+
+    helpText &= "SNIPPETS FOR AI OR USER REFERENCE" & vbCrLf
+    helpText &= "=================================" & vbCrLf & vbCrLf
+
+    helpText &= "1. Basic tag lookup helper" & vbCrLf
+    helpText &= "--------------------------" & vbCrLf
+    helpText &= _
+"Private Function HasTagValue(o As Object, ns As String, key As String, wantedValue As String) As Boolean" & vbCrLf & _
+"    Dim actualValue As String = GetTagValue(o, ns, key)" & vbCrLf & _
+"    If String.IsNullOrWhiteSpace(actualValue) Then" & vbCrLf & _
+"        HasTagValue = False" & vbCrLf & _
+"    Else" & vbCrLf & _
+"        HasTagValue = String.Compare(actualValue, wantedValue, True) = 0" & vbCrLf & _
+"    End If" & vbCrLf & _
+"End Function" & vbCrLf & vbCrLf
+
+    helpText &= "2. Find tagged parts in an assembly" & vbCrLf
+    helpText &= "----------------------------------" & vbCrLf
+    helpText &= _
+"Dim asm As INV.AssemblyDocument = TryCast(ThisApplication.ActiveDocument, INV.AssemblyDocument)" & vbCrLf & _
+"If asm Is Nothing Then Exit Sub" & vbCrLf & vbCrLf & _
+"Dim wantedTag As String = ""antenna_cap""" & vbCrLf & vbCrLf & _
+"For Each d As INV.Document In asm.AllReferencedDocuments" & vbCrLf & _
+"    If d Is Nothing Then Continue For" & vbCrLf & _
+"    If d.DocumentType <> INV.DocumentTypeEnum.kPartDocumentObject Then Continue For" & vbCrLf & vbCrLf & _
+"    Dim p As INV.PartDocument = TryCast(d, INV.PartDocument)" & vbCrLf & _
+"    If p Is Nothing Then Continue For" & vbCrLf & vbCrLf & _
+"    If HasTagValue(p, ""INTERNAL_CAD_TAG"", ""TagName"", wantedTag) OrElse HasTagValue(p.ComponentDefinition, ""INTERNAL_CAD_TAG"", ""TagName"", wantedTag) Then" & vbCrLf & _
+"        WF.MessageBox.Show(""Tagged part found:"" & vbCrLf & p.FullFileName)" & vbCrLf & _
+"    End If" & vbCrLf & _
+"Next" & vbCrLf & vbCrLf
+
+    helpText &= "3. Suppress tagged occurrences in an assembly" & vbCrLf
+    helpText &= "------------------------------------------" & vbCrLf
+    helpText &= _
+"Dim asm As INV.AssemblyDocument = TryCast(ThisApplication.ActiveDocument, INV.AssemblyDocument)" & vbCrLf & _
+"If asm Is Nothing Then Exit Sub" & vbCrLf & vbCrLf & _
+"Dim wantedTag As String = ""antenna_cap""" & vbCrLf & vbCrLf & _
+"For Each occ As INV.ComponentOccurrence In asm.ComponentDefinition.Occurrences" & vbCrLf & _
+"    Dim occDoc As INV.Document = Nothing" & vbCrLf & _
+"    Try" & vbCrLf & _
+"        occDoc = occ.Definition.Document" & vbCrLf & _
+"    Catch" & vbCrLf & _
+"        occDoc = Nothing" & vbCrLf & _
+"    End Try" & vbCrLf & vbCrLf & _
+"    If occDoc IsNot Nothing Then" & vbCrLf & _
+"        If HasTagValue(occDoc, ""INTERNAL_CAD_TAG"", ""TagName"", wantedTag) Then" & vbCrLf & _
+"            occ.Suppress()" & vbCrLf & _
+"        End If" & vbCrLf & _
+"    End If" & vbCrLf & _
+"Next" & vbCrLf & vbCrLf
+
+    helpText &= "4. Unsuppress tagged occurrences in an assembly" & vbCrLf
+    helpText &= "--------------------------------------------" & vbCrLf
+    helpText &= _
+"Dim asm As INV.AssemblyDocument = TryCast(ThisApplication.ActiveDocument, INV.AssemblyDocument)" & vbCrLf & _
+"If asm Is Nothing Then Exit Sub" & vbCrLf & vbCrLf & _
+"Dim wantedTag As String = ""antenna_cap""" & vbCrLf & vbCrLf & _
+"For Each occ As INV.ComponentOccurrence In asm.ComponentDefinition.Occurrences" & vbCrLf & _
+"    If occ.Suppressed Then" & vbCrLf & _
+"        occ.Unsuppress()" & vbCrLf & _
+"    End If" & vbCrLf & _
+"Next" & vbCrLf & vbCrLf
+
+    helpText &= "5. Suppress a feature in the active part" & vbCrLf
+    helpText &= "--------------------------------------" & vbCrLf
+    helpText &= _
+"Dim p As INV.PartDocument = TryCast(ThisApplication.ActiveDocument, INV.PartDocument)" & vbCrLf & _
+"If p Is Nothing Then Exit Sub" & vbCrLf & vbCrLf & _
+"Dim wantedTag As String = ""antenna_cap""" & vbCrLf & _
+"Dim featureName As String = ""Extrusion12""" & vbCrLf & vbCrLf & _
+"If HasTagValue(p, ""INTERNAL_CAD_TAG"", ""TagName"", wantedTag) OrElse HasTagValue(p.ComponentDefinition, ""INTERNAL_CAD_TAG"", ""TagName"", wantedTag) Then" & vbCrLf & _
+"    Feature.IsActive(featureName) = False" & vbCrLf & _
+"End If" & vbCrLf & vbCrLf
+
+    helpText &= "6. Unsuppress a feature in the active part" & vbCrLf
+    helpText &= "----------------------------------------" & vbCrLf
+    helpText &= _
+"Dim p As INV.PartDocument = TryCast(ThisApplication.ActiveDocument, INV.PartDocument)" & vbCrLf & _
+"If p Is Nothing Then Exit Sub" & vbCrLf & vbCrLf & _
+"Dim wantedTag As String = ""antenna_cap""" & vbCrLf & _
+"Dim featureName As String = ""Extrusion12""" & vbCrLf & vbCrLf & _
+"If HasTagValue(p, ""INTERNAL_CAD_TAG"", ""TagName"", wantedTag) OrElse HasTagValue(p.ComponentDefinition, ""INTERNAL_CAD_TAG"", ""TagName"", wantedTag) Then" & vbCrLf & _
+"    Feature.IsActive(featureName) = True" & vbCrLf & _
+"End If" & vbCrLf & vbCrLf
+
+    helpText &= "7. Assembly level feature control pattern" & vbCrLf
+    helpText &= "----------------------------------------" & vbCrLf
+    helpText &= _
+"' Assembly rules cannot reliably use Feature.IsActive against referenced part features directly." & vbCrLf & _
+"' The proven method is:" & vbCrLf & _
+"' 1. Find the tagged referenced part." & vbCrLf & _
+"' 2. Write a temporary external iLogic rule into an existing external rule folder." & vbCrLf & _
+"' 3. Run that external rule on the tagged part document." & vbCrLf & _
+"' 4. Delete the temporary external rule." & vbCrLf & vbCrLf & _
+"Dim changedCount As Integer = SetFeatureActiveByTag(asm, ""INTERNAL_CAD_TAG"", ""TagName"", ""antenna_cap"", ""Extrusion12"", False)" & vbCrLf & vbCrLf
+
+    helpText &= "8. Temporary external rule body used for part feature control" & vbCrLf
+    helpText &= "----------------------------------------------------------" & vbCrLf
+    helpText &= _
+"Dim ruleText As String = """"" & vbCrLf & _
+"ruleText &= ""Sub Main()"" & vbCrLf" & vbCrLf & _
+"ruleText &= ""    Feature.IsActive("""""" & featureName & """""") = "" & If(activeState, ""True"", ""False"") & vbCrLf" & vbCrLf & _
+"ruleText &= ""End Sub"" & vbCrLf" & vbCrLf
+
+    helpText &= "9. Transaction wrapper for replay code" & vbCrLf
+    helpText &= "-------------------------------------" & vbCrLf
+    helpText &= _
+"Dim txn As INV.Transaction = Nothing" & vbCrLf & vbCrLf & _
+"Try" & vbCrLf & _
+"    txn = ThisApplication.TransactionManager.StartTransaction(ThisApplication.ActiveDocument, ""Internal CAD Tag Replay"")" & vbCrLf & vbCrLf & _
+"    ' Run generated actions here" & vbCrLf & vbCrLf & _
+"    txn.End()" & vbCrLf & _
+"    txn = Nothing" & vbCrLf & vbCrLf & _
+"    InventorVb.DocumentUpdate(True)" & vbCrLf & vbCrLf & _
+"Catch ex As Exception" & vbCrLf & _
+"    If txn IsNot Nothing Then" & vbCrLf & _
+"        Try" & vbCrLf & _
+"            txn.Abort()" & vbCrLf & _
+"        Catch" & vbCrLf & _
+"        End Try" & vbCrLf & _
+"    End If" & vbCrLf & _
+"    WF.MessageBox.Show(ex.Message, ""Internal CAD Tag Replay Error"")" & vbCrLf & _
+"End Try" & vbCrLf & vbCrLf
+
+    helpText &= "10. Suggested AI prompt" & vbCrLf
+    helpText &= "----------------------" & vbCrLf
+    helpText &= "I am using Autodesk Inventor iLogic. I have parts and assemblies tagged with an AttributeSet named INTERNAL_CAD_TAG and an Attribute named TagName. I want to find files by that tag and run recorded actions against them. Occurrence actions happen in the assembly. Feature actions must run in the part context. For assembly level feature control, write a temporary external iLogic rule into an existing external rule directory and call iLogicVb.Automation.RunExternalRule(partDocument, ruleName)." & vbCrLf & vbCrLf
+
+    helpText &= "Current tag namespace: " & tagNs & vbCrLf
+    helpText &= "Current tag key: " & tagKey & vbCrLf
+
+    Dim resultForm As New WF.Form()
+    resultForm.Text = "Internal CAD Tag Help"
+    resultForm.StartPosition = WF.FormStartPosition.CenterParent
+    resultForm.Width = 1000
+    resultForm.Height = 720
+
+    Dim resultBox As New WF.TextBox()
+    resultBox.Multiline = True
+    resultBox.ReadOnly = True
+    resultBox.ScrollBars = WF.ScrollBars.Both
+    resultBox.WordWrap = False
+    resultBox.Dock = WF.DockStyle.Fill
+    resultBox.Font = New SD.Font("Consolas", 9.0!)
+    resultBox.Text = helpText
+
+    resultForm.Controls.Add(resultBox)
+    resultForm.ShowDialog()
+
+End Sub
+
+Private Function ShowRemoveTagScopeForm() As String
+
+    Dim f As New WF.Form()
+    f.Text = "Remove Internal CAD Tag"
+    f.FormBorderStyle = WF.FormBorderStyle.FixedDialog
+    f.StartPosition = WF.FormStartPosition.CenterParent
+    f.MinimizeBox = False
+    f.MaximizeBox = False
+    f.Width = 430
+    f.Height = 155
+
+    Dim lbl As New WF.Label()
+    lbl.Left = 12
+    lbl.Top = 14
+    lbl.Width = 390
+    lbl.Text = "Remove the internal CAD tag from a specific component or all components?"
+    f.Controls.Add(lbl)
+
+    Dim btnSpecific As New WF.Button()
+    btnSpecific.Text = "Specific Component"
+    btnSpecific.Width = 140
+    btnSpecific.Height = 30
+    btnSpecific.Left = 12
+    btnSpecific.Top = 65
+    btnSpecific.Tag = "SPECIFIC"
+    AddHandler btnSpecific.Click, AddressOf ScopeButtonClick
+    f.Controls.Add(btnSpecific)
+
+    Dim btnAll As New WF.Button()
+    btnAll.Text = "All Components"
+    btnAll.Width = 120
+    btnAll.Height = 30
+    btnAll.Left = 162
+    btnAll.Top = 65
+    btnAll.Tag = "ALL"
+    AddHandler btnAll.Click, AddressOf ScopeButtonClick
+    f.Controls.Add(btnAll)
+
+    Dim btnCancel As New WF.Button()
+    btnCancel.Text = "Cancel"
+    btnCancel.Width = 100
+    btnCancel.Height = 30
+    btnCancel.Left = 292
+    btnCancel.Top = 65
+    btnCancel.Tag = ""
+    AddHandler btnCancel.Click, AddressOf ScopeButtonClick
+    f.Controls.Add(btnCancel)
+
+    f.ShowDialog()
+
+    If f.Tag Is Nothing Then
+        ShowRemoveTagScopeForm = ""
+    Else
+        ShowRemoveTagScopeForm = CStr(f.Tag)
+    End If
+
+End Function
+
+Private Sub ScopeButtonClick(sender As Object, E As System.EventArgs)
+
+    Dim btn As WF.Button = TryCast(sender, WF.Button)
+
+    If btn Is Nothing Then Exit Sub
+
+    Dim f As WF.Form = btn.FindForm()
+
+    If f Is Nothing Then Exit Sub
+
+    f.Tag = CStr(btn.Tag)
+    f.Close()
+
+End Sub
+
+Private Function RemoveTagFromSpecificComponent(activeDoc As INV.Document, tagNs As String) As Integer
+
+    If activeDoc Is Nothing Then Return 0
+
+    If activeDoc.DocumentType = INV.DocumentTypeEnum.kPartDocumentObject OrElse activeDoc.DocumentType = INV.DocumentTypeEnum.kAssemblyDocumentObject Then
+
+        Dim removed As Integer = RemoveTagFromDocument(activeDoc, tagNs)
+
+        Try
+            activeDoc.Save()
+        Catch
+        End Try
+
+        Return removed
+
+    End If
+
+    Return 0
+
+End Function
+
+Private Function RemoveTagsFromAllComponents(topAsm As INV.AssemblyDocument, tagNs As String) As Integer
+
+    Dim removedCount As Integer = 0
+
+    removedCount += RemoveTagFromDocument(topAsm, tagNs)
+
+    Dim d As INV.Document
+
+    For Each d In topAsm.AllReferencedDocuments
+
+        If d Is Nothing Then Continue For
+        If String.IsNullOrEmpty(d.FullFileName) Then Continue For
+
+        If d.DocumentType = INV.DocumentTypeEnum.kPartDocumentObject OrElse d.DocumentType = INV.DocumentTypeEnum.kAssemblyDocumentObject Then
+
+            removedCount += RemoveTagFromDocument(d, tagNs)
+
+            Try
+                d.Save()
+            Catch
+            End Try
+
+        End If
+
+    Next
+
+    Try
+        topAsm.Save()
+    Catch
+    End Try
+
+    Return removedCount
+
+End Function
+
+Private Function RemoveTagFromDocument(doc As INV.Document, tagNs As String) As Integer
+
+    Dim removedCount As Integer = 0
+
+    On Error Resume Next
+
+    Dim docSets As INV.AttributeSets = doc.AttributeSets
+    Dim docSet As INV.AttributeSet = docSets.Item(tagNs)
+
+    If Err.Number = 0 AndAlso docSet IsNot Nothing Then
+        docSet.Delete()
+        removedCount += 1
+    End If
+
+    Err.Clear()
+
+    If doc.DocumentType = INV.DocumentTypeEnum.kPartDocumentObject Then
+
+        Dim p As INV.PartDocument = TryCast(doc, INV.PartDocument)
+
+        If p IsNot Nothing Then
+
+            Dim partSets As INV.AttributeSets = p.ComponentDefinition.AttributeSets
+            Dim partSet As INV.AttributeSet = partSets.Item(tagNs)
+
+            If Err.Number = 0 AndAlso partSet IsNot Nothing Then
+                partSet.Delete()
+                removedCount += 1
+            End If
+
+            Err.Clear()
+
+        End If
+
+    ElseIf doc.DocumentType = INV.DocumentTypeEnum.kAssemblyDocumentObject Then
+
+        Dim asm As INV.AssemblyDocument = TryCast(doc, INV.AssemblyDocument)
+
+        If asm IsNot Nothing Then
+
+            Dim asmSets As INV.AttributeSets = asm.ComponentDefinition.AttributeSets
+            Dim asmSet As INV.AttributeSet = asmSets.Item(tagNs)
+
+            If Err.Number = 0 AndAlso asmSet IsNot Nothing Then
+                asmSet.Delete()
+                removedCount += 1
+            End If
+
+            Err.Clear()
+
+        End If
+
+    End If
+
+    On Error GoTo 0
+
+    Return removedCount
+
+End Function
+
+Private Function PickPartFeature(prompt As String) As Object
+
+    Dim picked As Object = Nothing
+
+    Try
+        picked = ThisApplication.CommandManager.Pick(INV.SelectionFilterEnum.kPartFeatureFilter, prompt)
+    Catch
+        picked = Nothing
+    End Try
+
+    PickPartFeature = picked
+
+End Function
+
+Private Function GetFeatureName(featureObj As Object) As String
+
+    On Error Resume Next
+
+    Dim nm As String = CStr(CallByName(featureObj, "Name", CallType.Get))
+
+    If Err.Number <> 0 Then
+        Err.Clear()
+        GetFeatureName = ""
+    Else
+        GetFeatureName = nm
+    End If
+
+    On Error GoTo 0
+
+End Function
+
+Private Function GetDetectedTagText(activeDoc As INV.Document, tagNs As String, tagKey As String) As String
+
+    If activeDoc Is Nothing Then Return ""
+
+    Dim docTag As String = GetTagValue(activeDoc, tagNs, tagKey)
+    Dim defTag As String = ""
+
+    If activeDoc.DocumentType = INV.DocumentTypeEnum.kPartDocumentObject Then
+
+        Dim p As INV.PartDocument = TryCast(activeDoc, INV.PartDocument)
+
+        If p IsNot Nothing Then
+            defTag = GetTagValue(p.ComponentDefinition, tagNs, tagKey)
+        End If
+
+    ElseIf activeDoc.DocumentType = INV.DocumentTypeEnum.kAssemblyDocumentObject Then
+
+        Dim asm As INV.AssemblyDocument = TryCast(activeDoc, INV.AssemblyDocument)
+
+        If asm IsNot Nothing Then
+            defTag = GetTagValue(asm.ComponentDefinition, tagNs, tagKey)
+        End If
+
+    End If
+
+    If Not String.IsNullOrWhiteSpace(docTag) AndAlso Not String.IsNullOrWhiteSpace(defTag) Then
+
+        If String.Compare(docTag, defTag, True) = 0 Then
+            Return docTag
+        Else
+            Return "Document: " & docTag & " | Definition: " & defTag
+        End If
+
+    ElseIf Not String.IsNullOrWhiteSpace(docTag) Then
+
+        Return "Document: " & docTag
+
+    ElseIf Not String.IsNullOrWhiteSpace(defTag) Then
+
+        Return "Definition: " & defTag
+
+    End If
+
+    Return "No internal CAD tag detected"
+
+End Function
+
+Private Function ResolveEffectiveTagForActiveFile(activeDoc As INV.Document, tagNs As String, tagKey As String, typedTag As String) As String
+
+    If activeDoc Is Nothing Then Return typedTag
+
+    Dim foundTags As New List(Of String)
+
+    Dim docTag As String = GetTagValue(activeDoc, tagNs, tagKey)
+
+    If Not String.IsNullOrWhiteSpace(docTag) Then
+        If Not foundTags.Contains(docTag) Then foundTags.Add(docTag)
+    End If
+
+    If activeDoc.DocumentType = INV.DocumentTypeEnum.kPartDocumentObject Then
+
+        Dim p As INV.PartDocument = TryCast(activeDoc, INV.PartDocument)
+
+        If p IsNot Nothing Then
+            Dim defTag As String = GetTagValue(p.ComponentDefinition, tagNs, tagKey)
+
+            If Not String.IsNullOrWhiteSpace(defTag) Then
+                If Not foundTags.Contains(defTag) Then foundTags.Add(defTag)
+            End If
+        End If
+
+    ElseIf activeDoc.DocumentType = INV.DocumentTypeEnum.kAssemblyDocumentObject Then
+
+        Dim asm As INV.AssemblyDocument = TryCast(activeDoc, INV.AssemblyDocument)
+
+        If asm IsNot Nothing Then
+            Dim defTag As String = GetTagValue(asm.ComponentDefinition, tagNs, tagKey)
+
+            If Not String.IsNullOrWhiteSpace(defTag) Then
+                If Not foundTags.Contains(defTag) Then foundTags.Add(defTag)
+            End If
+        End If
+
+    End If
+
+    If foundTags.Count = 0 Then
+        Return typedTag
+    End If
+
+    If foundTags.Count = 1 Then
+        Return foundTags(0)
+    End If
+
+    Return ShowTagChoiceForm(foundTags, typedTag)
+
+End Function
+
+Private Function ShowTagChoiceForm(foundTags As List(Of String), typedTag As String) As String
+
+    Dim f As New WF.Form()
+    f.Text = "Choose Internal CAD Tag"
+    f.FormBorderStyle = WF.FormBorderStyle.FixedDialog
+    f.StartPosition = WF.FormStartPosition.CenterParent
+    f.MinimizeBox = False
+    f.MaximizeBox = False
+    f.Width = 460
+    f.Height = 230
+
+    Dim lbl As New WF.Label()
+    lbl.Left = 12
+    lbl.Top = 14
+    lbl.Width = 420
+    lbl.Text = "Multiple tags were detected. Choose which tag to use for this action."
+    f.Controls.Add(lbl)
+
+    Dim cbo As New WF.ComboBox()
+    cbo.Left = 12
+    cbo.Top = 48
+    cbo.Width = 420
+    cbo.DropDownStyle = WF.ComboBoxStyle.DropDownList
+
+    Dim tagValue As String
+    For Each tagValue In foundTags
+        cbo.Items.Add(tagValue)
+    Next
+
+    If Not String.IsNullOrWhiteSpace(typedTag) Then
+        cbo.Items.Add(typedTag)
+    End If
+
+    If cbo.Items.Count > 0 Then cbo.SelectedIndex = 0
+
+    f.Controls.Add(cbo)
+
+    Dim okBtn As New WF.Button()
+    okBtn.Text = "OK"
+    okBtn.Width = 90
+    okBtn.Height = 28
+    okBtn.Left = 242
+    okBtn.Top = 125
+    okBtn.DialogResult = WF.DialogResult.OK
+    f.Controls.Add(okBtn)
+
+    Dim cancelBtn As New WF.Button()
+    cancelBtn.Text = "Cancel"
+    cancelBtn.Width = 90
+    cancelBtn.Height = 28
+    cancelBtn.Left = 342
+    cancelBtn.Top = 125
+    cancelBtn.DialogResult = WF.DialogResult.Cancel
+    f.Controls.Add(cancelBtn)
+
+    f.AcceptButton = okBtn
+    f.CancelButton = cancelBtn
+
+    If f.ShowDialog() = WF.DialogResult.OK Then
+        Return CStr(cbo.SelectedItem)
+    End If
+
+    Return ""
+
+End Function
