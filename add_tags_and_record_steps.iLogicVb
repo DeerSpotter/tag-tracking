@@ -427,10 +427,10 @@ Sub Main()
 
         AppendRecorderStep(recorderFile, "SUPPRESS_OCC|" & effectiveTag)
 
-        WF.MessageBox.Show("Selected occurrence tag: " & effectiveTag & vbCrLf & vbCrLf & _
-                           "Suppressed matching occurrences: " & count.ToString() & vbCrLf & vbCrLf & _
-                           "Step recorded.", _
-                           "Internal CAD Tag")
+'        WF.MessageBox.Show("Selected occurrence tag: " & effectiveTag & vbCrLf & vbCrLf & _
+'                           "Suppressed matching occurrences: " & count.ToString() & vbCrLf & vbCrLf & _
+'                           "Step recorded.", _
+'                           "Internal CAD Tag")
 
     ElseIf actionName = "UNSUPPRESS_OCC" Then
 
@@ -467,10 +467,10 @@ Sub Main()
         Catch
         End Try
 
-        WF.MessageBox.Show("Unsuppressed matching tagged occurrences and recorded the tag based replay step." & vbCrLf & vbCrLf & _
-                           "Tag: " & effectiveTag & vbCrLf & _
-                           "Unsuppressed occurrences: " & count.ToString(), _
-                           "Internal CAD Tag")
+'        WF.MessageBox.Show("Unsuppressed matching tagged occurrences and recorded the tag based replay step." & vbCrLf & vbCrLf & _
+'                           "Tag: " & effectiveTag & vbCrLf & _
+'                           "Unsuppressed occurrences: " & count.ToString(), _
+'                           "Internal CAD Tag")
 
     ElseIf actionName = "SUPPRESS_FEATURE" Then
 
@@ -514,10 +514,10 @@ Sub Main()
 
             AppendRecorderStep(recorderFile, "SUPPRESS_FEATURE|" & effectiveTag & "|" & featureName)
 
-            WF.MessageBox.Show("Tagged feature suppressed and step recorded." & vbCrLf & vbCrLf & _
-                               "Tag: " & effectiveTag & vbCrLf & _
-                               "Feature: " & featureName, _
-                               "Internal CAD Tag")
+'            WF.MessageBox.Show("Tagged feature suppressed and step recorded." & vbCrLf & vbCrLf & _
+'                               "Tag: " & effectiveTag & vbCrLf & _
+'                               "Feature: " & featureName, _
+'                               "Internal CAD Tag")
         Else
             WF.MessageBox.Show("Feature was selected, but Inventor did not suppress it." & vbCrLf & vbCrLf & _
                                "Feature: " & featureName, _
@@ -566,10 +566,10 @@ Sub Main()
 
             AppendRecorderStep(recorderFile, "UNSUPPRESS_FEATURE|" & effectiveTag & "|" & featureName)
 
-            WF.MessageBox.Show("Tagged feature unsuppressed and step recorded." & vbCrLf & vbCrLf & _
-                               "Tag: " & effectiveTag & vbCrLf & _
-                               "Feature: " & featureName, _
-                               "Internal CAD Tag")
+'            WF.MessageBox.Show("Tagged feature unsuppressed and step recorded." & vbCrLf & vbCrLf & _
+'                               "Tag: " & effectiveTag & vbCrLf & _
+'                               "Feature: " & featureName, _
+'                               "Internal CAD Tag")
         Else
             WF.MessageBox.Show("Feature was selected, but Inventor did not unsuppress it." & vbCrLf & vbCrLf & _
                                "Feature: " & featureName, _
@@ -711,7 +711,19 @@ End Sub
 
 Private Function UnsuppressOccurrencesByTagSafe(occs As INV.ComponentOccurrences, tagNs As String, tagKey As String, wantedTag As String) As Integer
 
-    Dim count As Integer = 0
+    Dim targets As New System.Collections.ArrayList()
+
+    CollectOccurrencesByTag(occs, tagNs, tagKey, wantedTag, targets)
+
+    Return ApplyQueuedMatchedTaggedOccurrencesActive(targets, True)
+
+End Function
+
+Private Sub CollectOccurrencesByTag(occs As INV.ComponentOccurrences, tagNs As String, tagKey As String, wantedTag As String, targets As System.Collections.ArrayList)
+
+    If occs Is Nothing Then Exit Sub
+    If targets Is Nothing Then Exit Sub
+
     Dim occ As INV.ComponentOccurrence
 
     For Each occ In occs
@@ -722,14 +734,7 @@ Private Function UnsuppressOccurrencesByTagSafe(occs As INV.ComponentOccurrences
 
             If HasTagValue(occDoc, tagNs, tagKey, wantedTag) OrElse HasComponentDefinitionTagValue(occDoc, tagNs, tagKey, wantedTag) Then
 
-                Try
-                    If occ.Suppressed Then
-                        occ.Unsuppress()
-                    End If
-
-                    count += 1
-                Catch
-                End Try
+                targets.Add(occ)
 
             ElseIf occDoc.DocumentType = INV.DocumentTypeEnum.kAssemblyDocumentObject Then
 
@@ -742,7 +747,7 @@ Private Function UnsuppressOccurrencesByTagSafe(occs As INV.ComponentOccurrences
                 End Try
 
                 If subDef IsNot Nothing Then
-                    count += UnsuppressOccurrencesByTagSafe(subDef.Occurrences, tagNs, tagKey, wantedTag)
+                    CollectOccurrencesByTag(subDef.Occurrences, tagNs, tagKey, wantedTag, targets)
                 End If
 
             End If
@@ -751,7 +756,176 @@ Private Function UnsuppressOccurrencesByTagSafe(occs As INV.ComponentOccurrences
 
     Next
 
-    Return count
+End Sub
+
+Private Function ApplyQueuedMatchedTaggedOccurrencesActive(targets As System.Collections.ArrayList, activeState As Boolean) As Integer
+
+    If targets Is Nothing Then Return 0
+    If targets.Count = 0 Then Return 0
+
+    Dim app As INV.Application = ThisApplication
+    Dim asmDoc As INV.AssemblyDocument = TryCast(app.ActiveDocument, INV.AssemblyDocument)
+
+    If asmDoc Is Nothing Then Return 0
+
+    Dim asmDef As INV.AssemblyComponentDefinition = asmDoc.ComponentDefinition
+    Dim isIAssemblyFactory As Boolean = False
+
+    Try
+        isIAssemblyFactory = asmDef.IsiAssemblyFactory
+    Catch
+        isIAssemblyFactory = False
+    End Try
+
+    If Not isIAssemblyFactory Then
+
+        Dim normalCount As Integer = 0
+        Dim obj As Object
+
+        For Each obj In targets
+
+            Dim occ As INV.ComponentOccurrence = TryCast(obj, INV.ComponentOccurrence)
+
+            If occ Is Nothing Then Continue For
+
+            Try
+                If activeState Then
+                    If occ.Suppressed Then
+                        occ.Unsuppress()
+                    End If
+                Else
+                    If Not occ.Suppressed Then
+                        occ.Suppress()
+                    End If
+                End If
+            Catch
+            End Try
+
+            Try
+                If activeState Then
+                    If Not occ.Suppressed Then normalCount += 1
+                Else
+                    If occ.Suppressed Then normalCount += 1
+                End If
+            Catch
+            End Try
+
+        Next
+
+        Try
+            asmDoc.Update()
+            asmDoc.Save()
+        Catch
+        End Try
+
+        Return normalCount
+
+    End If
+
+    Dim wantedExcluded As Boolean = Not activeState
+    Dim needsToggle As New System.Collections.ArrayList()
+    Dim alreadyCorrectCount As Integer = 0
+    Dim targetObj As Object
+
+    For Each targetObj In targets
+
+        Dim occ As INV.ComponentOccurrence = TryCast(targetObj, INV.ComponentOccurrence)
+
+        If occ Is Nothing Then Continue For
+
+        Dim currentExcluded As Boolean = IsOccurrenceExcludedInActiveIAssemblyRow(occ)
+
+        If currentExcluded = wantedExcluded Then
+            alreadyCorrectCount += 1
+        Else
+            needsToggle.Add(occ)
+        End If
+
+    Next
+
+    If needsToggle.Count = 0 Then
+        Return alreadyCorrectCount
+    End If
+
+    Try
+        asmDoc.SelectSet.Clear()
+
+        Dim toggleObj As Object
+
+        For Each toggleObj In needsToggle
+
+            Dim occ As INV.ComponentOccurrence = TryCast(toggleObj, INV.ComponentOccurrence)
+
+            If occ IsNot Nothing Then
+                asmDoc.SelectSet.Select(occ)
+            End If
+
+        Next
+
+        app.CommandManager.ControlDefinitions.Item("ExcludeCtxCmd").Execute()
+
+        WF.Application.DoEvents()
+
+        Try
+            asmDoc.Update()
+        Catch
+        End Try
+
+        Try
+            asmDoc.SelectSet.Clear()
+        Catch
+        End Try
+
+    Catch
+        Try
+            asmDoc.SelectSet.Clear()
+        Catch
+        End Try
+    End Try
+
+    Dim changedCount As Integer = 0
+    Dim failed As New System.Collections.ArrayList()
+    Dim verifyObj As Object
+
+    For Each verifyObj In needsToggle
+
+        Dim occ As INV.ComponentOccurrence = TryCast(verifyObj, INV.ComponentOccurrence)
+
+        If occ Is Nothing Then Continue For
+
+        If IsOccurrenceExcludedInActiveIAssemblyRow(occ) = wantedExcluded Then
+            changedCount += 1
+        Else
+            failed.Add(occ)
+        End If
+
+    Next
+
+    If failed.Count > 0 Then
+
+        Dim failedObj As Object
+
+        For Each failedObj In failed
+
+            Dim occ As INV.ComponentOccurrence = TryCast(failedObj, INV.ComponentOccurrence)
+
+            If occ Is Nothing Then Continue For
+
+            If SetMatchedTaggedOccurrenceActive(occ, activeState) Then
+                changedCount += 1
+            End If
+
+        Next
+
+    End If
+
+    Try
+        asmDoc.Update()
+        asmDoc.Save()
+    Catch
+    End Try
+
+    Return alreadyCorrectCount + changedCount
 
 End Function
 
@@ -1602,38 +1776,334 @@ End Sub
 
 Private Function SuppressOccurrencesByTag(occs As INV.ComponentOccurrences, tagNs As String, tagKey As String, wantedTag As String) As Integer
 
-    Dim count As Integer = 0
-    Dim occ As INV.ComponentOccurrence
+    Dim targets As New System.Collections.ArrayList()
 
-    For Each occ In occs
+    CollectOccurrencesByTag(occs, tagNs, tagKey, wantedTag, targets)
 
-        On Error Resume Next
+    Return ApplyQueuedMatchedTaggedOccurrencesActive(targets, False)
 
-        Dim occDoc As INV.Document = Nothing
-        occDoc = occ.Definition.Document
+End Function
 
-        If Err.Number = 0 AndAlso occDoc IsNot Nothing Then
+Private Function SetOccurrenceSuppressedOrExcluded(occ As INV.ComponentOccurrence, suppressState As Boolean) As Boolean
 
-            If HasTagValue(occDoc, tagNs, tagKey, wantedTag) Then
+    If occ Is Nothing Then Return False
+
+    Dim wantedActive As Boolean = Not suppressState
+
+    Try
+        CallByName(occ, "Visible", CallType.Let, wantedActive)
+    Catch
+    End Try
+
+    Try
+        If suppressState Then
+            If occ.Suppressed Then Return True
+        Else
+            If Not occ.Suppressed Then Return True
+        End If
+    Catch
+    End Try
+
+    Try
+        If suppressState Then
+            If Not occ.Suppressed Then
+                occ.Suppress()
+            End If
+        Else
+            If occ.Suppressed Then
+                occ.Unsuppress()
+            End If
+        End If
+    Catch
+    End Try
+
+    Try
+        If suppressState Then
+            Return occ.Suppressed
+        Else
+            Return Not occ.Suppressed
+        End If
+    Catch
+    End Try
+
+    Return False
+
+End Function
+
+Private Function IsOccurrenceExcludedInActiveIAssemblyRow(occ As INV.ComponentOccurrence) As Boolean
+
+    If occ Is Nothing Then Return False
+
+    Dim app As INV.Application = ThisApplication
+    Dim asmDoc As INV.AssemblyDocument = TryCast(app.ActiveDocument, INV.AssemblyDocument)
+
+    If asmDoc Is Nothing Then Return False
+
+    Dim asmDef As INV.AssemblyComponentDefinition = asmDoc.ComponentDefinition
+    Dim factoryObj As Object = Nothing
+    Dim rowObj As Object = Nothing
+
+    Try
+        factoryObj = CallByName(asmDef, "iAssemblyFactory", CallType.Get)
+    Catch
+        factoryObj = Nothing
+    End Try
+
+    If factoryObj Is Nothing Then
+
+        Try
+            Return occ.Suppressed
+        Catch
+            Return False
+        End Try
+
+    End If
+
+    Try
+        rowObj = CallByName(factoryObj, "DefaultRow", CallType.Get)
+    Catch
+        rowObj = Nothing
+    End Try
+
+    If rowObj Is Nothing Then Return False
+
+    Try
+        Return CBool(CallByName(rowObj, "IsExcluded", CallType.Method, occ))
+    Catch
+        Return False
+    End Try
+
+End Function
+
+Private Function SetMatchedTaggedOccurrenceActive(occ As INV.ComponentOccurrence, activeState As Boolean) As Boolean
+
+    If occ Is Nothing Then Return False
+
+    Dim app As INV.Application = ThisApplication
+    Dim asmDoc As INV.AssemblyDocument = TryCast(app.ActiveDocument, INV.AssemblyDocument)
+
+    If asmDoc Is Nothing Then Return False
+
+    Dim asmDef As INV.AssemblyComponentDefinition = asmDoc.ComponentDefinition
+    Dim isIAssemblyFactory As Boolean = False
+
+    Try
+        isIAssemblyFactory = asmDef.IsiAssemblyFactory
+    Catch
+        isIAssemblyFactory = False
+    End Try
+
+    If Not isIAssemblyFactory Then
+
+        Try
+            If activeState Then
+                If occ.Suppressed Then
+                    occ.Unsuppress()
+                End If
+            Else
                 If Not occ.Suppressed Then
                     occ.Suppress()
-                    count += 1
-                End If
-            ElseIf occDoc.DocumentType = INV.DocumentTypeEnum.kAssemblyDocumentObject Then
-                Dim subDef As INV.AssemblyComponentDefinition = TryCast(occ.Definition, INV.AssemblyComponentDefinition)
-                If subDef IsNot Nothing Then
-                    count += SuppressOccurrencesByTag(subDef.Occurrences, tagNs, tagKey, wantedTag)
                 End If
             End If
+        Catch
+        End Try
 
+        Try
+            If activeState Then
+                Return Not occ.Suppressed
+            Else
+                Return occ.Suppressed
+            End If
+        Catch
+        End Try
+
+        Return False
+
+    End If
+
+    Dim beforeExcluded As Boolean = IsOccurrenceExcludedInActiveIAssemblyRow(occ)
+    Dim wantedExcluded As Boolean = Not activeState
+
+    If beforeExcluded = wantedExcluded Then
+        Return True
+    End If
+
+    Try
+        asmDoc.SelectSet.Clear()
+        asmDoc.SelectSet.Select(occ)
+
+        app.CommandManager.ControlDefinitions.Item("ExcludeCtxCmd").Execute()
+
+        WF.Application.DoEvents()
+
+        Try
+            asmDoc.Update()
+        Catch
+        End Try
+
+        Try
+            asmDoc.SelectSet.Clear()
+        Catch
+        End Try
+
+    Catch
+        Try
+            asmDoc.SelectSet.Clear()
+        Catch
+        End Try
+
+        Return False
+    End Try
+
+    Dim afterExcluded As Boolean = IsOccurrenceExcludedInActiveIAssemblyRow(occ)
+
+    If afterExcluded = wantedExcluded Then
+        Try
+            asmDoc.Save()
+        Catch
+        End Try
+
+        Return True
+    End If
+
+    Return False
+
+End Function
+
+Private Function SetIAssemblyOccurrenceIncludedByRowCell(occ As INV.ComponentOccurrence) As Boolean
+
+    Return SetIAssemblyOccurrenceExcludedStateByRowCell(occ, False)
+
+End Function
+
+Private Function SetIAssemblyOccurrenceExcludedByRowCell(occ As INV.ComponentOccurrence) As Boolean
+
+    Return SetIAssemblyOccurrenceExcludedStateByRowCell(occ, True)
+
+End Function
+
+Private Function SetIAssemblyOccurrenceExcludedStateByRowCell(occ As INV.ComponentOccurrence, wantedExcluded As Boolean) As Boolean
+
+    If occ Is Nothing Then Return False
+
+    Dim app As INV.Application = ThisApplication
+    Dim asmDoc As INV.AssemblyDocument = TryCast(app.ActiveDocument, INV.AssemblyDocument)
+
+    If asmDoc Is Nothing Then Return False
+
+    Dim asmDef As INV.AssemblyComponentDefinition = asmDoc.ComponentDefinition
+    Dim factoryObj As Object = Nothing
+    Dim rowObj As Object = Nothing
+    Dim columnsObj As Object = Nothing
+
+    Try
+        factoryObj = CallByName(asmDef, "iAssemblyFactory", CallType.Get)
+    Catch
+        factoryObj = Nothing
+    End Try
+
+    If factoryObj Is Nothing Then Return False
+
+    Try
+        rowObj = CallByName(factoryObj, "DefaultRow", CallType.Get)
+    Catch
+        rowObj = Nothing
+    End Try
+
+    If rowObj Is Nothing Then Return False
+
+    Try
+        columnsObj = CallByName(factoryObj, "TableColumns", CallType.Get)
+    Catch
+        columnsObj = Nothing
+    End Try
+
+    If columnsObj Is Nothing Then Return False
+
+    Dim targetHeading As String = occ.Name & ":Include/Exclude"
+    Dim wantedValue As String = ""
+
+    If wantedExcluded Then
+        wantedValue = "Exclude"
+    Else
+        wantedValue = "Include"
+    End If
+
+    Dim colCount As Integer = 0
+
+    Try
+        colCount = CInt(CallByName(columnsObj, "Count", CallType.Get))
+    Catch
+        colCount = 0
+    End Try
+
+    If colCount <= 0 Then Return False
+
+    Dim i As Integer
+
+    For i = 1 To colCount
+
+        Dim colObj As Object = Nothing
+        Dim cellObj As Object = Nothing
+        Dim headingText As String = ""
+
+        Try
+            colObj = CallByName(columnsObj, "Item", CallType.Get, i)
+        Catch
+            colObj = Nothing
+        End Try
+
+        If colObj Is Nothing Then Continue For
+
+        Try
+            headingText = System.Convert.ToString(CallByName(colObj, "Heading", CallType.Get))
+        Catch
+            headingText = ""
+        End Try
+
+        If String.Compare(headingText, targetHeading, True) <> 0 Then Continue For
+
+        Try
+            cellObj = CallByName(rowObj, "Item", CallType.Get, i)
+        Catch
+            cellObj = Nothing
+        End Try
+
+        If cellObj Is Nothing Then Return False
+
+        Try
+            CallByName(cellObj, "Value", CallType.Set, wantedValue)
+        Catch
+            Return False
+        End Try
+
+        Try
+            asmDoc.Update()
+        Catch
+        End Try
+
+        Dim afterExcluded As Boolean = False
+
+        Try
+            afterExcluded = CBool(CallByName(rowObj, "IsExcluded", CallType.Method, occ))
+        Catch
+            afterExcluded = False
+        End Try
+
+        If afterExcluded = wantedExcluded Then
+            Return True
         End If
 
-        Err.Clear()
-        On Error GoTo 0
+        Return False
 
     Next
 
-    SuppressOccurrencesByTag = count
+    WF.MessageBox.Show("Could not find the iAssembly Include/Exclude column for this occurrence." & vbCrLf & vbCrLf & _
+                       "Occurrence: " & occ.Name & vbCrLf & _
+                       "Expected heading: " & targetHeading, _
+                       "Internal CAD Tag")
+
+    Return False
 
 End Function
 
@@ -1858,16 +2328,20 @@ Private Function GetGeneratedHelperCode() As String
     Dim s As String = ""
 
     s &= "Private Function HasTagValue(o As Object, ns As String, key As String, wantedValue As String) As Boolean" & vbCrLf
+    s &= vbCrLf
     s &= "    Dim actualValue As String = GetTagValue(o, ns, key)" & vbCrLf
+    s &= vbCrLf
     s &= "    If String.IsNullOrWhiteSpace(actualValue) Then" & vbCrLf
-    s &= "        HasTagValue = False" & vbCrLf
-    s &= "    Else" & vbCrLf
-    s &= "        HasTagValue = String.Compare(actualValue, wantedValue, True) = 0" & vbCrLf
+    s &= "        Return False" & vbCrLf
     s &= "    End If" & vbCrLf
+    s &= vbCrLf
+    s &= "    Return String.Compare(actualValue, wantedValue, True) = 0" & vbCrLf
+    s &= vbCrLf
     s &= "End Function" & vbCrLf
     s &= vbCrLf
 
     s &= "Private Function GetTagValue(o As Object, ns As String, key As String) As String" & vbCrLf
+    s &= vbCrLf
     s &= "    On Error Resume Next" & vbCrLf
     s &= vbCrLf
     s &= "    Dim sets As INV.AttributeSets = Nothing" & vbCrLf
@@ -1875,8 +2349,7 @@ Private Function GetGeneratedHelperCode() As String
     s &= vbCrLf
     s &= "    If Err.Number <> 0 OrElse sets Is Nothing Then" & vbCrLf
     s &= "        Err.Clear()" & vbCrLf
-    s &= "        GetTagValue = """"" & vbCrLf
-    s &= "        Exit Function" & vbCrLf
+    s &= "        Return """"" & vbCrLf
     s &= "    End If" & vbCrLf
     s &= vbCrLf
     s &= "    Dim aset As INV.AttributeSet = Nothing" & vbCrLf
@@ -1884,8 +2357,7 @@ Private Function GetGeneratedHelperCode() As String
     s &= vbCrLf
     s &= "    If Err.Number <> 0 OrElse aset Is Nothing Then" & vbCrLf
     s &= "        Err.Clear()" & vbCrLf
-    s &= "        GetTagValue = """"" & vbCrLf
-    s &= "        Exit Function" & vbCrLf
+    s &= "        Return """"" & vbCrLf
     s &= "    End If" & vbCrLf
     s &= vbCrLf
     s &= "    Dim at As INV.Attribute = Nothing" & vbCrLf
@@ -1893,13 +2365,14 @@ Private Function GetGeneratedHelperCode() As String
     s &= vbCrLf
     s &= "    If Err.Number <> 0 OrElse at Is Nothing Then" & vbCrLf
     s &= "        Err.Clear()" & vbCrLf
-    s &= "        GetTagValue = """"" & vbCrLf
-    s &= "        Exit Function" & vbCrLf
+    s &= "        Return """"" & vbCrLf
     s &= "    End If" & vbCrLf
     s &= vbCrLf
-    s &= "    GetTagValue = CStr(at.Value)" & vbCrLf
+    s &= "    Dim v As String = CStr(at.Value)" & vbCrLf
     s &= vbCrLf
     s &= "    On Error GoTo 0" & vbCrLf
+    s &= vbCrLf
+    s &= "    Return v" & vbCrLf
     s &= vbCrLf
     s &= "End Function" & vbCrLf
     s &= vbCrLf
@@ -1927,94 +2400,6 @@ Private Function GetGeneratedHelperCode() As String
     s &= "    End If" & vbCrLf
     s &= vbCrLf
     s &= "    Return False" & vbCrLf
-    s &= vbCrLf
-    s &= "End Function" & vbCrLf
-    s &= vbCrLf
-
-    s &= "Private Function SuppressOccurrencesByTag(occs As INV.ComponentOccurrences, tagNs As String, tagKey As String, wantedTag As String) As Integer" & vbCrLf
-    s &= vbCrLf
-    s &= "    Dim count As Integer = 0" & vbCrLf
-    s &= "    Dim occ As INV.ComponentOccurrence" & vbCrLf
-    s &= vbCrLf
-    s &= "    For Each occ In occs" & vbCrLf
-    s &= vbCrLf
-    s &= "        On Error Resume Next" & vbCrLf
-    s &= vbCrLf
-    s &= "        Dim occDoc As INV.Document = Nothing" & vbCrLf
-    s &= "        occDoc = occ.Definition.Document" & vbCrLf
-    s &= vbCrLf
-    s &= "        If Err.Number = 0 AndAlso occDoc IsNot Nothing Then" & vbCrLf
-    s &= vbCrLf
-    s &= "            If HasTagValue(occDoc, tagNs, tagKey, wantedTag) OrElse HasComponentDefinitionTagValue(occDoc, tagNs, tagKey, wantedTag) Then" & vbCrLf
-    s &= "                If Not occ.Suppressed Then" & vbCrLf
-    s &= "                    occ.Suppress()" & vbCrLf
-    s &= "                    count += 1" & vbCrLf
-    s &= "                End If" & vbCrLf
-    s &= "            ElseIf occDoc.DocumentType = INV.DocumentTypeEnum.kAssemblyDocumentObject Then" & vbCrLf
-    s &= vbCrLf
-    s &= "                Dim subDef As INV.AssemblyComponentDefinition = TryCast(occ.Definition, INV.AssemblyComponentDefinition)" & vbCrLf
-    s &= vbCrLf
-    s &= "                If subDef IsNot Nothing Then" & vbCrLf
-    s &= "                    count += SuppressOccurrencesByTag(subDef.Occurrences, tagNs, tagKey, wantedTag)" & vbCrLf
-    s &= "                End If" & vbCrLf
-    s &= vbCrLf
-    s &= "            End If" & vbCrLf
-    s &= vbCrLf
-    s &= "        End If" & vbCrLf
-    s &= vbCrLf
-    s &= "        Err.Clear()" & vbCrLf
-    s &= "        On Error GoTo 0" & vbCrLf
-    s &= vbCrLf
-    s &= "    Next" & vbCrLf
-    s &= vbCrLf
-    s &= "    SuppressOccurrencesByTag = count" & vbCrLf
-    s &= vbCrLf
-    s &= "End Function" & vbCrLf
-    s &= vbCrLf
-
-    s &= "Private Function UnsuppressOccurrencesByTagSafe(occs As INV.ComponentOccurrences, tagNs As String, tagKey As String, wantedTag As String) As Integer" & vbCrLf
-    s &= vbCrLf
-    s &= "    Dim count As Integer = 0" & vbCrLf
-    s &= "    Dim occ As INV.ComponentOccurrence" & vbCrLf
-    s &= vbCrLf
-    s &= "    For Each occ In occs" & vbCrLf
-    s &= vbCrLf
-    s &= "        Dim occDoc As INV.Document = GetOccurrenceDocumentSafe(occ)" & vbCrLf
-    s &= vbCrLf
-    s &= "        If occDoc IsNot Nothing Then" & vbCrLf
-    s &= vbCrLf
-    s &= "            If HasTagValue(occDoc, tagNs, tagKey, wantedTag) OrElse HasComponentDefinitionTagValue(occDoc, tagNs, tagKey, wantedTag) Then" & vbCrLf
-    s &= vbCrLf
-    s &= "                Try" & vbCrLf
-    s &= "                    If occ.Suppressed Then" & vbCrLf
-    s &= "                        occ.Unsuppress()" & vbCrLf
-    s &= "                    End If" & vbCrLf
-    s &= vbCrLf
-    s &= "                    count += 1" & vbCrLf
-    s &= "                Catch" & vbCrLf
-    s &= "                End Try" & vbCrLf
-    s &= vbCrLf
-    s &= "            ElseIf occDoc.DocumentType = INV.DocumentTypeEnum.kAssemblyDocumentObject Then" & vbCrLf
-    s &= vbCrLf
-    s &= "                Dim subDef As INV.AssemblyComponentDefinition = Nothing" & vbCrLf
-    s &= vbCrLf
-    s &= "                Try" & vbCrLf
-    s &= "                    subDef = TryCast(occ.Definition, INV.AssemblyComponentDefinition)" & vbCrLf
-    s &= "                Catch" & vbCrLf
-    s &= "                    subDef = Nothing" & vbCrLf
-    s &= "                End Try" & vbCrLf
-    s &= vbCrLf
-    s &= "                If subDef IsNot Nothing Then" & vbCrLf
-    s &= "                    count += UnsuppressOccurrencesByTagSafe(subDef.Occurrences, tagNs, tagKey, wantedTag)" & vbCrLf
-    s &= "                End If" & vbCrLf
-    s &= vbCrLf
-    s &= "            End If" & vbCrLf
-    s &= vbCrLf
-    s &= "        End If" & vbCrLf
-    s &= vbCrLf
-    s &= "    Next" & vbCrLf
-    s &= vbCrLf
-    s &= "    Return count" & vbCrLf
     s &= vbCrLf
     s &= "End Function" & vbCrLf
     s &= vbCrLf
@@ -2106,6 +2491,382 @@ Private Function GetGeneratedHelperCode() As String
     s &= "End Function" & vbCrLf
     s &= vbCrLf
 
+    s &= "Private Function SuppressOccurrencesByTag(occs As INV.ComponentOccurrences, tagNs As String, tagKey As String, wantedTag As String) As Integer" & vbCrLf
+    s &= vbCrLf
+    s &= "    Dim targets As New System.Collections.ArrayList()" & vbCrLf
+    s &= vbCrLf
+    s &= "    CollectOccurrencesByTag(occs, tagNs, tagKey, wantedTag, targets)" & vbCrLf
+    s &= vbCrLf
+    s &= "    Return ApplyQueuedMatchedTaggedOccurrencesActive(targets, False)" & vbCrLf
+    s &= vbCrLf
+    s &= "End Function" & vbCrLf
+    s &= vbCrLf
+
+    s &= "Private Function UnsuppressOccurrencesByTagSafe(occs As INV.ComponentOccurrences, tagNs As String, tagKey As String, wantedTag As String) As Integer" & vbCrLf
+    s &= vbCrLf
+    s &= "    Dim targets As New System.Collections.ArrayList()" & vbCrLf
+    s &= vbCrLf
+    s &= "    CollectOccurrencesByTag(occs, tagNs, tagKey, wantedTag, targets)" & vbCrLf
+    s &= vbCrLf
+    s &= "    Return ApplyQueuedMatchedTaggedOccurrencesActive(targets, True)" & vbCrLf
+    s &= vbCrLf
+    s &= "End Function" & vbCrLf
+    s &= vbCrLf
+
+    s &= "Private Sub CollectOccurrencesByTag(occs As INV.ComponentOccurrences, tagNs As String, tagKey As String, wantedTag As String, targets As System.Collections.ArrayList)" & vbCrLf
+    s &= vbCrLf
+    s &= "    If occs Is Nothing Then Exit Sub" & vbCrLf
+    s &= "    If targets Is Nothing Then Exit Sub" & vbCrLf
+    s &= vbCrLf
+    s &= "    Dim occ As INV.ComponentOccurrence" & vbCrLf
+    s &= vbCrLf
+    s &= "    For Each occ In occs" & vbCrLf
+    s &= vbCrLf
+    s &= "        Dim occDoc As INV.Document = GetOccurrenceDocumentSafe(occ)" & vbCrLf
+    s &= vbCrLf
+    s &= "        If occDoc IsNot Nothing Then" & vbCrLf
+    s &= vbCrLf
+    s &= "            If HasTagValue(occDoc, tagNs, tagKey, wantedTag) OrElse HasComponentDefinitionTagValue(occDoc, tagNs, tagKey, wantedTag) Then" & vbCrLf
+    s &= vbCrLf
+    s &= "                targets.Add(occ)" & vbCrLf
+    s &= vbCrLf
+    s &= "            ElseIf occDoc.DocumentType = INV.DocumentTypeEnum.kAssemblyDocumentObject Then" & vbCrLf
+    s &= vbCrLf
+    s &= "                Dim subDef As INV.AssemblyComponentDefinition = Nothing" & vbCrLf
+    s &= vbCrLf
+    s &= "                Try" & vbCrLf
+    s &= "                    subDef = TryCast(occ.Definition, INV.AssemblyComponentDefinition)" & vbCrLf
+    s &= "                Catch" & vbCrLf
+    s &= "                    subDef = Nothing" & vbCrLf
+    s &= "                End Try" & vbCrLf
+    s &= vbCrLf
+    s &= "                If subDef IsNot Nothing Then" & vbCrLf
+    s &= "                    CollectOccurrencesByTag(subDef.Occurrences, tagNs, tagKey, wantedTag, targets)" & vbCrLf
+    s &= "                End If" & vbCrLf
+    s &= vbCrLf
+    s &= "            End If" & vbCrLf
+    s &= vbCrLf
+    s &= "        End If" & vbCrLf
+    s &= vbCrLf
+    s &= "    Next" & vbCrLf
+    s &= vbCrLf
+    s &= "End Sub" & vbCrLf
+    s &= vbCrLf
+
+    s &= "Private Function ApplyQueuedMatchedTaggedOccurrencesActive(targets As System.Collections.ArrayList, activeState As Boolean) As Integer" & vbCrLf
+    s &= vbCrLf
+    s &= "    If targets Is Nothing Then Return 0" & vbCrLf
+    s &= "    If targets.Count = 0 Then Return 0" & vbCrLf
+    s &= vbCrLf
+    s &= "    Dim app As INV.Application = ThisApplication" & vbCrLf
+    s &= "    Dim asmDoc As INV.AssemblyDocument = TryCast(app.ActiveDocument, INV.AssemblyDocument)" & vbCrLf
+    s &= vbCrLf
+    s &= "    If asmDoc Is Nothing Then Return 0" & vbCrLf
+    s &= vbCrLf
+    s &= "    Dim asmDef As INV.AssemblyComponentDefinition = asmDoc.ComponentDefinition" & vbCrLf
+    s &= "    Dim isIAssemblyFactory As Boolean = False" & vbCrLf
+    s &= vbCrLf
+    s &= "    Try" & vbCrLf
+    s &= "        isIAssemblyFactory = asmDef.IsiAssemblyFactory" & vbCrLf
+    s &= "    Catch" & vbCrLf
+    s &= "        isIAssemblyFactory = False" & vbCrLf
+    s &= "    End Try" & vbCrLf
+    s &= vbCrLf
+    s &= "    If Not isIAssemblyFactory Then" & vbCrLf
+    s &= vbCrLf
+    s &= "        Dim normalCount As Integer = 0" & vbCrLf
+    s &= "        Dim obj As Object" & vbCrLf
+    s &= vbCrLf
+    s &= "        For Each obj In targets" & vbCrLf
+    s &= vbCrLf
+    s &= "            Dim occ As INV.ComponentOccurrence = TryCast(obj, INV.ComponentOccurrence)" & vbCrLf
+    s &= vbCrLf
+    s &= "            If occ Is Nothing Then Continue For" & vbCrLf
+    s &= vbCrLf
+    s &= "            Try" & vbCrLf
+    s &= "                If activeState Then" & vbCrLf
+    s &= "                    If occ.Suppressed Then" & vbCrLf
+    s &= "                        occ.Unsuppress()" & vbCrLf
+    s &= "                    End If" & vbCrLf
+    s &= "                Else" & vbCrLf
+    s &= "                    If Not occ.Suppressed Then" & vbCrLf
+    s &= "                        occ.Suppress()" & vbCrLf
+    s &= "                    End If" & vbCrLf
+    s &= "                End If" & vbCrLf
+    s &= "            Catch" & vbCrLf
+    s &= "            End Try" & vbCrLf
+    s &= vbCrLf
+    s &= "            Try" & vbCrLf
+    s &= "                If activeState Then" & vbCrLf
+    s &= "                    If Not occ.Suppressed Then normalCount += 1" & vbCrLf
+    s &= "                Else" & vbCrLf
+    s &= "                    If occ.Suppressed Then normalCount += 1" & vbCrLf
+    s &= "                End If" & vbCrLf
+    s &= "            Catch" & vbCrLf
+    s &= "            End Try" & vbCrLf
+    s &= vbCrLf
+    s &= "        Next" & vbCrLf
+    s &= vbCrLf
+    s &= "        Try" & vbCrLf
+    s &= "            asmDoc.Update()" & vbCrLf
+    s &= "            asmDoc.Save()" & vbCrLf
+    s &= "        Catch" & vbCrLf
+    s &= "        End Try" & vbCrLf
+    s &= vbCrLf
+    s &= "        Return normalCount" & vbCrLf
+    s &= vbCrLf
+    s &= "    End If" & vbCrLf
+    s &= vbCrLf
+    s &= "    Dim wantedExcluded As Boolean = Not activeState" & vbCrLf
+    s &= "    Dim needsToggle As New System.Collections.ArrayList()" & vbCrLf
+    s &= "    Dim alreadyCorrectCount As Integer = 0" & vbCrLf
+    s &= "    Dim targetObj As Object" & vbCrLf
+    s &= vbCrLf
+    s &= "    For Each targetObj In targets" & vbCrLf
+    s &= vbCrLf
+    s &= "        Dim occ As INV.ComponentOccurrence = TryCast(targetObj, INV.ComponentOccurrence)" & vbCrLf
+    s &= vbCrLf
+    s &= "        If occ Is Nothing Then Continue For" & vbCrLf
+    s &= vbCrLf
+    s &= "        Dim currentExcluded As Boolean = IsOccurrenceExcludedInActiveIAssemblyRow(occ)" & vbCrLf
+    s &= vbCrLf
+    s &= "        If currentExcluded = wantedExcluded Then" & vbCrLf
+    s &= "            alreadyCorrectCount += 1" & vbCrLf
+    s &= "        Else" & vbCrLf
+    s &= "            needsToggle.Add(occ)" & vbCrLf
+    s &= "        End If" & vbCrLf
+    s &= vbCrLf
+    s &= "    Next" & vbCrLf
+    s &= vbCrLf
+    s &= "    If needsToggle.Count = 0 Then" & vbCrLf
+    s &= "        Return alreadyCorrectCount" & vbCrLf
+    s &= "    End If" & vbCrLf
+    s &= vbCrLf
+    s &= "    Try" & vbCrLf
+    s &= "        asmDoc.SelectSet.Clear()" & vbCrLf
+    s &= vbCrLf
+    s &= "        Dim toggleObj As Object" & vbCrLf
+    s &= vbCrLf
+    s &= "        For Each toggleObj In needsToggle" & vbCrLf
+    s &= vbCrLf
+    s &= "            Dim occ As INV.ComponentOccurrence = TryCast(toggleObj, INV.ComponentOccurrence)" & vbCrLf
+    s &= vbCrLf
+    s &= "            If occ IsNot Nothing Then" & vbCrLf
+    s &= "                asmDoc.SelectSet.Select(occ)" & vbCrLf
+    s &= "            End If" & vbCrLf
+    s &= vbCrLf
+    s &= "        Next" & vbCrLf
+    s &= vbCrLf
+    s &= "        app.CommandManager.ControlDefinitions.Item(""ExcludeCtxCmd"").Execute()" & vbCrLf
+    s &= vbCrLf
+    s &= "        WF.Application.DoEvents()" & vbCrLf
+    s &= vbCrLf
+    s &= "        Try" & vbCrLf
+    s &= "            asmDoc.Update()" & vbCrLf
+    s &= "        Catch" & vbCrLf
+    s &= "        End Try" & vbCrLf
+    s &= vbCrLf
+    s &= "        Try" & vbCrLf
+    s &= "            asmDoc.SelectSet.Clear()" & vbCrLf
+    s &= "        Catch" & vbCrLf
+    s &= "        End Try" & vbCrLf
+    s &= vbCrLf
+    s &= "    Catch" & vbCrLf
+    s &= "        Try" & vbCrLf
+    s &= "            asmDoc.SelectSet.Clear()" & vbCrLf
+    s &= "        Catch" & vbCrLf
+    s &= "        End Try" & vbCrLf
+    s &= "    End Try" & vbCrLf
+    s &= vbCrLf
+    s &= "    Dim changedCount As Integer = 0" & vbCrLf
+    s &= "    Dim failed As New System.Collections.ArrayList()" & vbCrLf
+    s &= "    Dim verifyObj As Object" & vbCrLf
+    s &= vbCrLf
+    s &= "    For Each verifyObj In needsToggle" & vbCrLf
+    s &= vbCrLf
+    s &= "        Dim occ As INV.ComponentOccurrence = TryCast(verifyObj, INV.ComponentOccurrence)" & vbCrLf
+    s &= vbCrLf
+    s &= "        If occ Is Nothing Then Continue For" & vbCrLf
+    s &= vbCrLf
+    s &= "        If IsOccurrenceExcludedInActiveIAssemblyRow(occ) = wantedExcluded Then" & vbCrLf
+    s &= "            changedCount += 1" & vbCrLf
+    s &= "        Else" & vbCrLf
+    s &= "            failed.Add(occ)" & vbCrLf
+    s &= "        End If" & vbCrLf
+    s &= vbCrLf
+    s &= "    Next" & vbCrLf
+    s &= vbCrLf
+    s &= "    If failed.Count > 0 Then" & vbCrLf
+    s &= vbCrLf
+    s &= "        Dim failedObj As Object" & vbCrLf
+    s &= vbCrLf
+    s &= "        For Each failedObj In failed" & vbCrLf
+    s &= vbCrLf
+    s &= "            Dim occ As INV.ComponentOccurrence = TryCast(failedObj, INV.ComponentOccurrence)" & vbCrLf
+    s &= vbCrLf
+    s &= "            If occ Is Nothing Then Continue For" & vbCrLf
+    s &= vbCrLf
+    s &= "            If SetMatchedTaggedOccurrenceActive(occ, activeState) Then" & vbCrLf
+    s &= "                changedCount += 1" & vbCrLf
+    s &= "            End If" & vbCrLf
+    s &= vbCrLf
+    s &= "        Next" & vbCrLf
+    s &= vbCrLf
+    s &= "    End If" & vbCrLf
+    s &= vbCrLf
+    s &= "    Try" & vbCrLf
+    s &= "        asmDoc.Update()" & vbCrLf
+    s &= "        asmDoc.Save()" & vbCrLf
+    s &= "    Catch" & vbCrLf
+    s &= "    End Try" & vbCrLf
+    s &= vbCrLf
+    s &= "    Return alreadyCorrectCount + changedCount" & vbCrLf
+    s &= vbCrLf
+    s &= "End Function" & vbCrLf
+    s &= vbCrLf
+
+    s &= "Private Function IsOccurrenceExcludedInActiveIAssemblyRow(occ As INV.ComponentOccurrence) As Boolean" & vbCrLf
+    s &= vbCrLf
+    s &= "    If occ Is Nothing Then Return False" & vbCrLf
+    s &= vbCrLf
+    s &= "    Dim app As INV.Application = ThisApplication" & vbCrLf
+    s &= "    Dim asmDoc As INV.AssemblyDocument = TryCast(app.ActiveDocument, INV.AssemblyDocument)" & vbCrLf
+    s &= vbCrLf
+    s &= "    If asmDoc Is Nothing Then Return False" & vbCrLf
+    s &= vbCrLf
+    s &= "    Dim asmDef As INV.AssemblyComponentDefinition = asmDoc.ComponentDefinition" & vbCrLf
+    s &= "    Dim factoryObj As Object = Nothing" & vbCrLf
+    s &= "    Dim rowObj As Object = Nothing" & vbCrLf
+    s &= vbCrLf
+    s &= "    Try" & vbCrLf
+    s &= "        factoryObj = CallByName(asmDef, ""iAssemblyFactory"", CallType.Get)" & vbCrLf
+    s &= "    Catch" & vbCrLf
+    s &= "        factoryObj = Nothing" & vbCrLf
+    s &= "    End Try" & vbCrLf
+    s &= vbCrLf
+    s &= "    If factoryObj Is Nothing Then" & vbCrLf
+    s &= vbCrLf
+    s &= "        Try" & vbCrLf
+    s &= "            Return occ.Suppressed" & vbCrLf
+    s &= "        Catch" & vbCrLf
+    s &= "            Return False" & vbCrLf
+    s &= "        End Try" & vbCrLf
+    s &= vbCrLf
+    s &= "    End If" & vbCrLf
+    s &= vbCrLf
+    s &= "    Try" & vbCrLf
+    s &= "        rowObj = CallByName(factoryObj, ""DefaultRow"", CallType.Get)" & vbCrLf
+    s &= "    Catch" & vbCrLf
+    s &= "        rowObj = Nothing" & vbCrLf
+    s &= "    End Try" & vbCrLf
+    s &= vbCrLf
+    s &= "    If rowObj Is Nothing Then Return False" & vbCrLf
+    s &= vbCrLf
+    s &= "    Try" & vbCrLf
+    s &= "        Return CBool(CallByName(rowObj, ""IsExcluded"", CallType.Method, occ))" & vbCrLf
+    s &= "    Catch" & vbCrLf
+    s &= "        Return False" & vbCrLf
+    s &= "    End Try" & vbCrLf
+    s &= vbCrLf
+    s &= "End Function" & vbCrLf
+    s &= vbCrLf
+
+    s &= "Private Function SetMatchedTaggedOccurrenceActive(occ As INV.ComponentOccurrence, activeState As Boolean) As Boolean" & vbCrLf
+    s &= vbCrLf
+    s &= "    If occ Is Nothing Then Return False" & vbCrLf
+    s &= vbCrLf
+    s &= "    Dim app As INV.Application = ThisApplication" & vbCrLf
+    s &= "    Dim asmDoc As INV.AssemblyDocument = TryCast(app.ActiveDocument, INV.AssemblyDocument)" & vbCrLf
+    s &= vbCrLf
+    s &= "    If asmDoc Is Nothing Then Return False" & vbCrLf
+    s &= vbCrLf
+    s &= "    Dim asmDef As INV.AssemblyComponentDefinition = asmDoc.ComponentDefinition" & vbCrLf
+    s &= "    Dim isIAssemblyFactory As Boolean = False" & vbCrLf
+    s &= vbCrLf
+    s &= "    Try" & vbCrLf
+    s &= "        isIAssemblyFactory = asmDef.IsiAssemblyFactory" & vbCrLf
+    s &= "    Catch" & vbCrLf
+    s &= "        isIAssemblyFactory = False" & vbCrLf
+    s &= "    End Try" & vbCrLf
+    s &= vbCrLf
+    s &= "    If Not isIAssemblyFactory Then" & vbCrLf
+    s &= vbCrLf
+    s &= "        Try" & vbCrLf
+    s &= "            If activeState Then" & vbCrLf
+    s &= "                If occ.Suppressed Then" & vbCrLf
+    s &= "                    occ.Unsuppress()" & vbCrLf
+    s &= "                End If" & vbCrLf
+    s &= "            Else" & vbCrLf
+    s &= "                If Not occ.Suppressed Then" & vbCrLf
+    s &= "                    occ.Suppress()" & vbCrLf
+    s &= "                End If" & vbCrLf
+    s &= "            End If" & vbCrLf
+    s &= "        Catch" & vbCrLf
+    s &= "        End Try" & vbCrLf
+    s &= vbCrLf
+    s &= "        Try" & vbCrLf
+    s &= "            If activeState Then" & vbCrLf
+    s &= "                Return Not occ.Suppressed" & vbCrLf
+    s &= "            Else" & vbCrLf
+    s &= "                Return occ.Suppressed" & vbCrLf
+    s &= "            End If" & vbCrLf
+    s &= "        Catch" & vbCrLf
+    s &= "        End Try" & vbCrLf
+    s &= vbCrLf
+    s &= "        Return False" & vbCrLf
+    s &= vbCrLf
+    s &= "    End If" & vbCrLf
+    s &= vbCrLf
+    s &= "    Dim beforeExcluded As Boolean = IsOccurrenceExcludedInActiveIAssemblyRow(occ)" & vbCrLf
+    s &= "    Dim wantedExcluded As Boolean = Not activeState" & vbCrLf
+    s &= vbCrLf
+    s &= "    If beforeExcluded = wantedExcluded Then" & vbCrLf
+    s &= "        Return True" & vbCrLf
+    s &= "    End If" & vbCrLf
+    s &= vbCrLf
+    s &= "    Try" & vbCrLf
+    s &= "        asmDoc.SelectSet.Clear()" & vbCrLf
+    s &= "        asmDoc.SelectSet.Select(occ)" & vbCrLf
+    s &= vbCrLf
+    s &= "        app.CommandManager.ControlDefinitions.Item(""ExcludeCtxCmd"").Execute()" & vbCrLf
+    s &= vbCrLf
+    s &= "        WF.Application.DoEvents()" & vbCrLf
+    s &= vbCrLf
+    s &= "        Try" & vbCrLf
+    s &= "            asmDoc.Update()" & vbCrLf
+    s &= "        Catch" & vbCrLf
+    s &= "        End Try" & vbCrLf
+    s &= vbCrLf
+    s &= "        Try" & vbCrLf
+    s &= "            asmDoc.SelectSet.Clear()" & vbCrLf
+    s &= "        Catch" & vbCrLf
+    s &= "        End Try" & vbCrLf
+    s &= vbCrLf
+    s &= "    Catch" & vbCrLf
+    s &= "        Try" & vbCrLf
+    s &= "            asmDoc.SelectSet.Clear()" & vbCrLf
+    s &= "        Catch" & vbCrLf
+    s &= "        End Try" & vbCrLf
+    s &= vbCrLf
+    s &= "        Return False" & vbCrLf
+    s &= "    End Try" & vbCrLf
+    s &= vbCrLf
+    s &= "    Dim afterExcluded As Boolean = IsOccurrenceExcludedInActiveIAssemblyRow(occ)" & vbCrLf
+    s &= vbCrLf
+    s &= "    If afterExcluded = wantedExcluded Then" & vbCrLf
+    s &= "        Try" & vbCrLf
+    s &= "            asmDoc.Save()" & vbCrLf
+    s &= "        Catch" & vbCrLf
+    s &= "        End Try" & vbCrLf
+    s &= vbCrLf
+    s &= "        Return True" & vbCrLf
+    s &= "    End If" & vbCrLf
+    s &= vbCrLf
+    s &= "    Return False" & vbCrLf
+    s &= vbCrLf
+    s &= "End Function" & vbCrLf
+    s &= vbCrLf
+
     s &= "Private Function SetFeatureActiveByTag(topAsm As INV.AssemblyDocument, tagNs As String, tagKey As String, wantedTag As String, featureName As String, activeState As Boolean) As Integer" & vbCrLf
     s &= vbCrLf
     s &= "    Dim count As Integer = 0" & vbCrLf
@@ -2129,20 +2890,25 @@ Private Function GetGeneratedHelperCode() As String
     s &= "    Dim d As INV.Document" & vbCrLf
     s &= vbCrLf
     s &= "    For Each d In topAsm.AllReferencedDocuments" & vbCrLf
+    s &= vbCrLf
     s &= "        If d Is Nothing Then Continue For" & vbCrLf
     s &= "        If d.DocumentType <> INV.DocumentTypeEnum.kPartDocumentObject Then Continue For" & vbCrLf
     s &= vbCrLf
     s &= "        Dim p As INV.PartDocument = TryCast(d, INV.PartDocument)" & vbCrLf
+    s &= vbCrLf
     s &= "        If p Is Nothing Then Continue For" & vbCrLf
     s &= vbCrLf
     s &= "        If HasTagValue(p, tagNs, tagKey, wantedTag) OrElse HasTagValue(p.ComponentDefinition, tagNs, tagKey, wantedTag) Then" & vbCrLf
+    s &= vbCrLf
     s &= "            Try" & vbCrLf
     s &= "                iLogicVb.Automation.RunExternalRule(p, tempRuleName)" & vbCrLf
     s &= "                count += 1" & vbCrLf
     s &= "            Catch ex As Exception" & vbCrLf
     s &= "                WF.MessageBox.Show(""Failed on tagged part:"" & vbCrLf & p.FullFileName & vbCrLf & vbCrLf & ""Rule path:"" & vbCrLf & tempRulePath & vbCrLf & vbCrLf & ex.Message, ""Internal CAD Tag"")" & vbCrLf
     s &= "            End Try" & vbCrLf
+    s &= vbCrLf
     s &= "        End If" & vbCrLf
+    s &= vbCrLf
     s &= "    Next" & vbCrLf
     s &= vbCrLf
     s &= "    Try" & vbCrLf
@@ -2152,7 +2918,7 @@ Private Function GetGeneratedHelperCode() As String
     s &= "    Catch" & vbCrLf
     s &= "    End Try" & vbCrLf
     s &= vbCrLf
-    s &= "    SetFeatureActiveByTag = count" & vbCrLf
+    s &= "    Return count" & vbCrLf
     s &= vbCrLf
     s &= "End Function" & vbCrLf
     s &= vbCrLf
@@ -2183,179 +2949,911 @@ End Function
 
 Private Sub ShowCodeHelp(tagNs As String, tagKey As String)
 
-    Dim helpText As String = ""
+    Dim helpLines As String() = {
+        "# Internal CAD Tag Action Recorder",
+        "",
+        "## Purpose",
+        "",
+        "The Internal CAD Tag Action Recorder is an Autodesk Inventor iLogic tool used to mark parts and assemblies with internal CAD tags, find those tags later, record actions against tagged files, and generate replayable iLogic code.",
+        "",
+        "The core use case is simple:",
+        "",
+        "1. Tag a file or selected occurrence document.",
+        "2. Record an action such as suppress occurrence, unsuppress occurrence, suppress feature, or unsuppress feature.",
+        "3. Generate replayable iLogic code.",
+        "4. Run the replay code later against the same assembly structure.",
+        "",
+        "The tool is intended for repeatable CAD cleanup, configuration, and automation work where selected components or part features must be controlled by a stable internal tag rather than by browser name alone.",
+        "",
+        "## High level architecture",
+        "",
+        "The tool has four main layers.",
+        "",
+        "1. Tag storage layer",
+        "2. User action layer",
+        "3. Recorder layer",
+        "4. Generated replay layer",
+        "",
+        "The tag storage layer writes and reads Inventor AttributeSets.",
+        "",
+        "The user action layer provides buttons for writing tags, removing tags, searching tags, recording occurrence actions, recording feature actions, showing generated code, and clearing recorded steps.",
+        "",
+        "The recorder layer writes compact action records to a temporary text file.",
+        "",
+        "The generated replay layer converts those compact records into a standalone iLogic rule that can reproduce the recorded actions.",
+        "",
+        "## Core constants",
+        "",
+        "The live recorder uses these tag constants.",
+        "",
+        "```vb",
+        "Const TAG_NS As String = """ & tagNs & """",
+        "Const TAG_KEY As String = """ & tagKey & """",
+        "Const DATE_KEY As String = ""TaggedDate""",
+        "Const USER_KEY As String = ""TaggedBy""",
+        "Const DOC_TYPE_KEY As String = ""TaggedDocumentType""",
+        "```",
+        "",
+        "`TAG_NS` is the AttributeSet name.",
+        "",
+        "`TAG_KEY` is the main internal CAD tag value.",
+        "",
+        "`DATE_KEY` stores when the tag was written.",
+        "",
+        "`USER_KEY` stores who wrote the tag.",
+        "",
+        "`DOC_TYPE_KEY` stores whether the tagged file was treated as a part or an assembly.",
+        "",
+        "## Tag storage model",
+        "",
+        "The tool writes the same tag to two locations when possible.",
+        "",
+        "```text",
+        "Document object",
+        "ComponentDefinition object",
+        "```",
+        "",
+        "For a part, this means:",
+        "",
+        "```text",
+        "PartDocument",
+        "PartDocument.ComponentDefinition",
+        "```",
+        "",
+        "For an assembly, this means:",
+        "",
+        "```text",
+        "AssemblyDocument",
+        "AssemblyDocument.ComponentDefinition",
+        "```",
+        "",
+        "This dual write is intentional. Some Inventor contexts expose document attributes more reliably, while other contexts expose component definition attributes more reliably.",
+        "",
+        "When checking for a matching tag, the code should check both locations.",
+        "",
+        "```vb",
+        "HasTagValue(occDoc, TAG_NS, TAG_KEY, wantedTag)",
+        "HasComponentDefinitionTagValue(occDoc, TAG_NS, TAG_KEY, wantedTag)",
+        "```",
+        "",
+        "A match is valid if either location contains the requested tag.",
+        "",
+        "## What a tag represents",
+        "",
+        "A tag represents the file identity or automation group you want the tool to act on.",
+        "",
+        "The tag is not the occurrence name.",
+        "",
+        "The tag is not the file name.",
+        "",
+        "The tag is not the feature name.",
+        "",
+        "The tag is a stable internal marker written into the Inventor document attributes.",
+        "",
+        "Occurrence names can change.",
+        "",
+        "Browser names can change.",
+        "",
+        "File paths can move.",
+        "",
+        "The tag is meant to remain a stable automation target.",
+        "",
+        "## User interface actions",
+        "",
+        "### WRITE TAG",
+        "",
+        "Writes the custom tag to the active part or active assembly.",
+        "",
+        "When the active document is a part, the tool writes to the part document and part component definition.",
+        "",
+        "When the active document is an assembly, the tool writes to the assembly document and assembly component definition.",
+        "",
+        "After writing the tag, the file is saved.",
+        "",
+        "### REMOVE TAG",
+        "",
+        "Removes the internal CAD tag.",
+        "",
+        "The removal form supports two logical scopes.",
+        "",
+        "```text",
+        "SPECIFIC",
+        "ALL",
+        "```",
+        "",
+        "`SPECIFIC` removes tags from the current open file only.",
+        "",
+        "`ALL` removes tags from the current assembly and all referenced parts and assemblies.",
+        "",
+        "Each file can contain up to two tag locations:",
+        "",
+        "```text",
+        "Document level",
+        "Component definition level",
+        "```",
+        "",
+        "The removal count is a tag location count, not a file count.",
+        "",
+        "### CHECK TAG",
+        "",
+        "Searches the current assembly for one exact tag name.",
+        "",
+        "The search checks the top assembly first, then iterates referenced documents.",
+        "",
+        "The result reports checked assemblies, checked parts, and matching tagged files.",
+        "",
+        "### SEARCH ALL",
+        "",
+        "Searches the current assembly for every internal CAD tag.",
+        "",
+        "This is an audit action.",
+        "",
+        "It reports all found tags, tagged date, tagged user, and tagged document type when available.",
+        "",
+        "### CODE HELP",
+        "",
+        "Shows this internal reference document in a copyable text box.",
+        "",
+        "The output is Markdown style so it can also be saved as a SKILL.md reference document.",
+        "",
+        "### SUPPRESS OCC",
+        "",
+        "Records and runs a tag based occurrence suppression action.",
+        "",
+        "The user selects one occurrence.",
+        "",
+        "The tool resolves the effective tag for that selected occurrence.",
+        "",
+        "If the selected occurrence document already has a tag, that tag is used.",
+        "",
+        "If the selected occurrence document does not have a tag, the tool asks whether to write the current typed tag to the selected occurrence document.",
+        "",
+        "After a tag is resolved, the tool finds all matching tagged occurrences and suppresses or excludes them.",
+        "",
+        "Then it records:",
+        "",
+        "```text",
+        "SUPPRESS_OCC|TagName",
+        "```",
+        "",
+        "### UNSUPPRESS OCC",
+        "",
+        "Records and runs a tag based occurrence unsuppression action.",
+        "",
+        "The user can type the tag directly or select one occurrence to read its tag.",
+        "",
+        "After a tag is resolved, the tool finds all matching tagged occurrences and unsuppresses or includes them.",
+        "",
+        "Then it records:",
+        "",
+        "```text",
+        "UNSUPPRESS_OCC|TagName",
+        "```",
+        "",
+        "### SUPPRESS FEATURE",
+        "",
+        "Records and runs a part feature suppression action.",
+        "",
+        "The user must run this while a part file is active.",
+        "",
+        "The tool resolves the effective tag for the active file.",
+        "",
+        "The user selects a feature from the model tree.",
+        "",
+        "The tool reads the selected feature name and suppresses it.",
+        "",
+        "Then it records:",
+        "",
+        "```text",
+        "SUPPRESS_FEATURE|TagName|FeatureName",
+        "```",
+        "",
+        "### UNSUPPRESS FEATURE",
+        "",
+        "Records and runs a part feature unsuppression action.",
+        "",
+        "The user must run this while a part file is active.",
+        "",
+        "The tool resolves the effective tag for the active file.",
+        "",
+        "The user selects a feature from the model tree.",
+        "",
+        "The tool reads the selected feature name and unsuppresses it.",
+        "",
+        "Then it records:",
+        "",
+        "```text",
+        "UNSUPPRESS_FEATURE|TagName|FeatureName",
+        "```",
+        "",
+        "### SHOW GENERATED CODE",
+        "",
+        "Reads the recorder file and builds a standalone iLogic replay rule.",
+        "",
+        "The generated code appears in a copyable text box.",
+        "",
+        "### CLEAR STEPS",
+        "",
+        "Deletes the recorder file.",
+        "",
+        "Use this when the next generated replay code should contain only new actions.",
+        "",
+        "## Recorder file",
+        "",
+        "The recorder file is stored in the Windows temp folder.",
+        "",
+        "```vb",
+        "Dim recorderFile As String = IO.Path.Combine(IO.Path.GetTempPath(), ""InternalCadTag_ActionRecorder.txt"")",
+        "```",
+        "",
+        "Each recorded action is stored as one line.",
+        "",
+        "Occurrence action format:",
+        "",
+        "```text",
+        "SUPPRESS_OCC|TagName",
+        "UNSUPPRESS_OCC|TagName",
+        "```",
+        "",
+        "Feature action format:",
+        "",
+        "```text",
+        "SUPPRESS_FEATURE|TagName|FeatureName",
+        "UNSUPPRESS_FEATURE|TagName|FeatureName",
+        "```",
+        "",
+        "When a new recordable action starts and the file already has content, the tool asks whether to clear previous steps.",
+        "",
+        "Yes means delete the old recorder file and continue.",
+        "",
+        "No means append the new action to the existing recorder file.",
+        "",
+        "## Generated replay code",
+        "",
+        "The generated replay code is built by `BuildGeneratedCode` and `GetGeneratedHelperCode`.",
+        "",
+        "`BuildGeneratedCode` creates the top level replay rule.",
+        "",
+        "`GetGeneratedHelperCode` appends all helper functions needed by the replay rule.",
+        "",
+        "The generated replay code includes this startup pattern.",
+        "",
+        "```vb",
+        "AddReference ""System.Windows.Forms.dll""",
+        "Imports INV = Inventor",
+        "Imports WF = System.Windows.Forms",
+        "Imports IO = System.IO",
+        "",
+        "Sub Main()",
+        "    Const TAG_NS As String = ""INTERNAL_CAD_TAG""",
+        "    Const TAG_KEY As String = ""TagName""",
+        "",
+        "    Dim app As INV.Application = ThisApplication",
+        "    Dim activeDoc As INV.Document = app.ActiveDocument",
+        "    Dim asm As INV.AssemblyDocument = TryCast(activeDoc, INV.AssemblyDocument)",
+        "    Dim part As INV.PartDocument = TryCast(activeDoc, INV.PartDocument)",
+        "    Dim txn As INV.Transaction = Nothing",
+        "```",
+        "",
+        "The generated replay code starts an Inventor transaction.",
+        "",
+        "```vb",
+        "txn = app.TransactionManager.StartTransaction(activeDoc, ""Internal CAD Tag Replay"")",
+        "```",
+        "",
+        "If the replay succeeds, the transaction is ended.",
+        "",
+        "If an exception occurs, the transaction is aborted.",
+        "",
+        "This gives the generated replay rule a cleaner undo behavior.",
+        "",
+        "## Generated replay occurrence pipeline",
+        "",
+        "Occurrence replay actions use this pipeline.",
+        "",
+        "```text",
+        "Recorded tag",
+        "Search assembly occurrence tree",
+        "Collect all matching occurrences",
+        "Apply desired active state",
+        "Verify result",
+        "Save once",
+        "```",
+        "",
+        "The generated suppress call should be:",
+        "",
+        "```vb",
+        "SuppressOccurrencesByTag(asm.ComponentDefinition.Occurrences, TAG_NS, TAG_KEY, ""TagName"")",
+        "```",
+        "",
+        "The generated unsuppress call should be:",
+        "",
+        "```vb",
+        "UnsuppressOccurrencesByTagSafe(asm.ComponentDefinition.Occurrences, TAG_NS, TAG_KEY, ""TagName"")",
+        "```",
+        "",
+        "Both functions should use the queued pipeline.",
+        "",
+        "## Queued occurrence processing",
+        "",
+        "The queued method is the current preferred method.",
+        "",
+        "The older method toggled each occurrence immediately during search.",
+        "",
+        "The faster method separates search from action.",
+        "",
+        "The faster method does this.",
+        "",
+        "1. Search all matching tagged occurrences.",
+        "2. Store each match in `System.Collections.ArrayList`.",
+        "3. Determine which matches already have the desired state.",
+        "4. For iAssemblies, multi select only occurrences that need the toggle.",
+        "5. Run `ExcludeCtxCmd` once.",
+        "6. Verify every queued occurrence.",
+        "7. Fall back to one by one only for failures.",
+        "8. Update and save once at the end.",
+        "",
+        "This avoids repeated update and save calls inside the recursive search loop.",
+        "",
+        "This is especially important for iAssembly exclusions because UI command execution and model updates are expensive.",
+        "",
+        "## Required queued helper functions",
+        "",
+        "Generated code should include these occurrence helpers.",
+        "",
+        "```text",
+        "SuppressOccurrencesByTag",
+        "UnsuppressOccurrencesByTagSafe",
+        "CollectOccurrencesByTag",
+        "ApplyQueuedMatchedTaggedOccurrencesActive",
+        "SetMatchedTaggedOccurrenceActive",
+        "IsOccurrenceExcludedInActiveIAssemblyRow",
+        "```",
+        "",
+        "## Normal assembly occurrence path",
+        "",
+        "Normal assemblies should use the normal API path.",
+        "",
+        "For suppress:",
+        "",
+        "```vb",
+        "If Not occ.Suppressed Then",
+        "    occ.Suppress()",
+        "End If",
+        "```",
+        "",
+        "For unsuppress:",
+        "",
+        "```vb",
+        "If occ.Suppressed Then",
+        "    occ.Unsuppress()",
+        "End If",
+        "```",
+        "",
+        "Normal assemblies do not need `ExcludeCtxCmd`.",
+        "",
+        "Normal assemblies do not need iAssembly row verification.",
+        "",
+        "## iAssembly occurrence path",
+        "",
+        "iAssembly factories do not behave like normal assemblies for occurrence suppression.",
+        "",
+        "Direct occurrence suppression can fail with invalid argument errors.",
+        "",
+        "Direct table cell assignment can fail with COM errors.",
+        "",
+        "The verified working path is to use Inventor's own context command.",
+        "",
+        "```vb",
+        "app.CommandManager.ControlDefinitions.Item(""ExcludeCtxCmd"").Execute()",
+        "```",
+        "",
+        "`ExcludeCtxCmd` behaves like the right click Exclude checkbox.",
+        "",
+        "If the occurrence is currently included, running the command excludes it.",
+        "",
+        "If the occurrence is currently excluded, running the command includes it.",
+        "",
+        "Because it is a toggle, the code must check current state before running it.",
+        "",
+        "## iAssembly desired state logic",
+        "",
+        "The generated code uses this logic.",
+        "",
+        "```vb",
+        "Dim beforeExcluded As Boolean = IsOccurrenceExcludedInActiveIAssemblyRow(occ)",
+        "Dim wantedExcluded As Boolean = Not activeState",
+        "",
+        "If beforeExcluded = wantedExcluded Then",
+        "    Return True",
+        "End If",
+        "```",
+        "",
+        "`activeState = False` means the occurrence should be suppressed or excluded.",
+        "",
+        "`activeState = True` means the occurrence should be unsuppressed or included.",
+        "",
+        "Therefore:",
+        "",
+        "```vb",
+        "Dim wantedExcluded As Boolean = Not activeState",
+        "```",
+        "",
+        "When wanted state differs from current state, the code selects the occurrence and runs `ExcludeCtxCmd`.",
+        "",
+        "## iAssembly state verification",
+        "",
+        "The code verifies iAssembly state with the active iAssembly factory row.",
+        "",
+        "```vb",
+        "Return CBool(CallByName(rowObj, ""IsExcluded"", CallType.Method, occ))",
+        "```",
+        "",
+        "If the active document is not an iAssembly factory, the helper falls back to `occ.Suppressed`.",
+        "",
+        "This makes the same helper usable in both normal assembly and iAssembly contexts.",
+        "",
+        "## Why direct Excluded property is not used",
+        "",
+        "Do not use this:",
+        "",
+        "```vb",
+        "occ.Excluded = False",
+        "```",
+        "",
+        "In this Inventor iLogic context, `Excluded` was not available on the selected `ComponentOccurrence` object.",
+        "",
+        "The observed error was member not found.",
+        "",
+        "This means the selected occurrence cannot be controlled through a simple `occ.Excluded` property.",
+        "",
+        "## Why direct table cell editing is not used",
+        "",
+        "The iAssembly table can show a column like this:",
+        "",
+        "```text",
+        "ASSIEME RUOTA:1:Include/Exclude",
+        "```",
+        "",
+        "The cell value can show:",
+        "",
+        "```text",
+        "Exclude",
+        "```",
+        "",
+        "However, direct cell assignment can still fail.",
+        "",
+        "Example of the unreliable path:",
+        "",
+        "```vb",
+        "CallByName(cellObj, ""Value"", CallType.Set, ""Include"")",
+        "```",
+        "",
+        "Even when the column exists and the value is visible, Inventor may reject direct assignment with an unspecified COM error.",
+        "",
+        "Because right click Exclude works reliably, the correct automation path is to preselect the occurrence and run `ExcludeCtxCmd`.",
+        "",
+        "## Why Component.IsActive is not the main path",
+        "",
+        "Do not use this as the primary iAssembly method:",
+        "",
+        "```vb",
+        "Component.IsActive(occ.Name) = False",
+        "```",
+        "",
+        "`Component.IsActive` can be useful in simple iLogic cases, but it was not reliable for the iAssembly occurrence case handled by this tool.",
+        "",
+        "The tag system still finds by tag.",
+        "",
+        "The occurrence name is only a transient handle and should not become the targeting method.",
+        "",
+        "## Tag based targeting rule",
+        "",
+        "The action target is always the tag.",
+        "",
+        "The tool should never become name based.",
+        "",
+        "Correct logic:",
+        "",
+        "```text",
+        "Find matching document tag",
+        "Get the matching occurrence object",
+        "Apply the state change to that occurrence object",
+        "```",
+        "",
+        "Incorrect logic:",
+        "",
+        "```text",
+        "Search by occurrence browser name",
+        "Suppress by occurrence browser name",
+        "```",
+        "",
+        "Occurrence names are only used indirectly by Inventor when a selected occurrence is passed to the command system.",
+        "",
+        "## Feature replay pipeline",
+        "",
+        "Feature actions are different from occurrence actions.",
+        "",
+        "Feature actions target part features by feature name on tagged part documents.",
+        "",
+        "The generated feature replay uses a temporary external iLogic rule.",
+        "",
+        "The temp rule name is:",
+        "",
+        "```text",
+        "__TEMP_TAG_FEATURE_ACTIVE",
+        "```",
+        "",
+        "The generated temp rule body is:",
+        "",
+        "```vb",
+        "Sub Main()",
+        "    Feature.IsActive(""FeatureName"") = True",
+        "End Sub",
+        "```",
+        "",
+        "or:",
+        "",
+        "```vb",
+        "Sub Main()",
+        "    Feature.IsActive(""FeatureName"") = False",
+        "End Sub",
+        "```",
+        "",
+        "The tool writes the temp rule into the first valid external rule directory.",
+        "",
+        "Then it runs that external rule against each tagged part.",
+        "",
+        "After processing, it attempts to delete the temporary rule file.",
+        "",
+        "## Required generated helper map",
+        "",
+        "A complete generated replay rule should include these helpers.",
+        "",
+        "### Tag helpers",
+        "",
+        "```text",
+        "HasTagValue",
+        "GetTagValue",
+        "HasComponentDefinitionTagValue",
+        "```",
+        "",
+        "### Document resolution helpers",
+        "",
+        "```text",
+        "GetOccurrenceDocumentSafe",
+        "```",
+        "",
+        "### Occurrence action helpers",
+        "",
+        "```text",
+        "SuppressOccurrencesByTag",
+        "UnsuppressOccurrencesByTagSafe",
+        "CollectOccurrencesByTag",
+        "ApplyQueuedMatchedTaggedOccurrencesActive",
+        "SetMatchedTaggedOccurrenceActive",
+        "IsOccurrenceExcludedInActiveIAssemblyRow",
+        "```",
+        "",
+        "### Feature action helpers",
+        "",
+        "```text",
+        "SetFeatureActiveByTag",
+        "GetFirstExternalRuleDirectory",
+        "```",
+        "",
+        "## Helpers that should not be generated anymore",
+        "",
+        "These helpers are old or unreliable and should not be emitted by `GetGeneratedHelperCode`.",
+        "",
+        "```text",
+        "SetOccurrenceSuppressedOrExcluded",
+        "SetIAssemblyOccurrenceIncludedByRowCell",
+        "SetIAssemblyOccurrenceExcludedByRowCell",
+        "SetIAssemblyOccurrenceExcludedStateByRowCell",
+        "UnsuppressOccurrencesByTag",
+        "```",
+        "",
+        "`SetOccurrenceSuppressedOrExcluded` used older suppression logic and does not handle iAssembly factories correctly.",
+        "",
+        "`SetIAssemblyOccurrenceIncludedByRowCell`, `SetIAssemblyOccurrenceExcludedByRowCell`, and `SetIAssemblyOccurrenceExcludedStateByRowCell` rely on direct table cell assignment, which is not reliable in this context.",
+        "",
+        "`UnsuppressOccurrencesByTag` is the older unsafe unsuppress helper and should be replaced by `UnsuppressOccurrencesByTagSafe`.",
+        "",
+        "## Document resolution strategy",
+        "",
+        "Suppressed or excluded occurrences may not expose their document through the simplest path.",
+        "",
+        "The helper should try multiple paths.",
+        "",
+        "First:",
+        "",
+        "```vb",
+        "occ.Definition.Document",
+        "```",
+        "",
+        "Then:",
+        "",
+        "```vb",
+        "occ.ReferencedDocumentDescriptor.ReferencedDocument",
+        "```",
+        "",
+        "Then:",
+        "",
+        "```vb",
+        "occ.ReferencedDocumentDescriptor.FullDocumentName",
+        "ThisApplication.Documents.Open(fullName, False)",
+        "```",
+        "",
+        "Then:",
+        "",
+        "```vb",
+        "occ.ReferencedFileDescriptor.FullFileName",
+        "ThisApplication.Documents.Open(fileName, False)",
+        "```",
+        "",
+        "This makes the tag search more resilient when components are suppressed, excluded, or not fully resolved.",
+        "",
+        "## Normal suppress replay example",
+        "",
+        "Generated suppress replay should require an assembly.",
+        "",
+        "```vb",
+        "If asm Is Nothing Then",
+        "    WF.MessageBox.Show(""Open an assembly first for occurrence suppression."")",
+        "    Exit Sub",
+        "End If",
+        "",
+        "SuppressOccurrencesByTag(asm.ComponentDefinition.Occurrences, TAG_NS, TAG_KEY, ""MyTag"")",
+        "```",
+        "",
+        "## Normal unsuppress replay example",
+        "",
+        "Generated unsuppress replay should require an assembly.",
+        "",
+        "```vb",
+        "If asm Is Nothing Then",
+        "    WF.MessageBox.Show(""Open an assembly first for occurrence unsuppression."")",
+        "    Exit Sub",
+        "End If",
+        "",
+        "UnsuppressOccurrencesByTagSafe(asm.ComponentDefinition.Occurrences, TAG_NS, TAG_KEY, ""MyTag"")",
+        "```",
+        "",
+        "## Normal feature suppress replay example",
+        "",
+        "If the active document is an assembly, feature replay searches all referenced parts.",
+        "",
+        "```vb",
+        "SetFeatureActiveByTag(asm, TAG_NS, TAG_KEY, ""MyTag"", ""FeatureName"", False)",
+        "```",
+        "",
+        "If the active document is a part, feature replay checks the active part tag and directly uses `Feature.IsActive`.",
+        "",
+        "```vb",
+        "Feature.IsActive(""FeatureName"") = False",
+        "```",
+        "",
+        "## Normal feature unsuppress replay example",
+        "",
+        "If the active document is an assembly, feature replay searches all referenced parts.",
+        "",
+        "```vb",
+        "SetFeatureActiveByTag(asm, TAG_NS, TAG_KEY, ""MyTag"", ""FeatureName"", True)",
+        "```",
+        "",
+        "If the active document is a part, feature replay checks the active part tag and directly uses `Feature.IsActive`.",
+        "",
+        "```vb",
+        "Feature.IsActive(""FeatureName"") = True",
+        "```",
+        "",
+        "## Recommended workflow for creating a suppress replay",
+        "",
+        "1. Open the top level assembly.",
+        "2. Run the action recorder.",
+        "3. Enter the intended custom tag.",
+        "4. Click `SUPPRESS OCC`.",
+        "5. Select one occurrence that represents the target group.",
+        "6. Let the tool resolve or write the tag.",
+        "7. Let the action run once.",
+        "8. Review the generated replay code.",
+        "9. Copy the generated replay code into a new iLogic rule.",
+        "10. Test the generated rule.",
+        "",
+        "## Recommended workflow for creating an unsuppress replay",
+        "",
+        "1. Open the top level assembly.",
+        "2. Run the action recorder.",
+        "3. Click `UNSUPPRESS OCC`.",
+        "4. Type the tag or choose `Select Occurrence`.",
+        "5. Let the action run once.",
+        "6. Review the generated replay code.",
+        "7. Copy the generated replay code into a new iLogic rule.",
+        "8. Test the generated rule.",
+        "",
+        "## Recommended workflow for feature actions",
+        "",
+        "1. Open the tagged part.",
+        "2. Run the action recorder.",
+        "3. Click `SUPPRESS FEATURE` or `UNSUPPRESS FEATURE`.",
+        "4. Select the feature from the model tree.",
+        "5. Confirm the generated replay code.",
+        "6. Run the generated replay from a part or assembly context as needed.",
+        "",
+        "## Performance notes",
+        "",
+        "The fastest proven occurrence approach is queued processing.",
+        "",
+        "Do not update and save inside every recursive match.",
+        "",
+        "Do not run `ExcludeCtxCmd` one occurrence at a time unless the multi select path fails.",
+        "",
+        "Do not repeatedly open message boxes during batch processing.",
+        "",
+        "Do not add logging inside the replay path unless specifically debugging.",
+        "",
+        "Use one final update and save after the queued operation.",
+        "",
+        "## Known limitations",
+        "",
+        "1. The iAssembly command path depends on `ExcludeCtxCmd` being available in the current Inventor context.",
+        "2. The command path depends on the occurrence being selectable.",
+        "3. Direct table cell editing may fail even when the Include or Exclude column exists.",
+        "4. Suppressed or excluded occurrences may not always resolve their referenced document.",
+        "5. Feature actions depend on exact feature names.",
+        "6. Feature actions require a valid external iLogic rule directory when replayed against referenced parts.",
+        "7. The generated replay assumes the active document context is correct.",
+        "",
+        "## Troubleshooting duplicate function errors",
+        "",
+        "If the iLogic rule reports multiple definitions with identical signatures, search for the duplicated function and keep only one copy.",
+        "",
+        "Common duplicates:",
+        "",
+        "```text",
+        "HasTagValue",
+        "GetTagValue",
+        "GetOccurrenceDocumentSafe",
+        "HasComponentDefinitionTagValue",
+        "SuppressOccurrencesByTag",
+        "UnsuppressOccurrencesByTagSafe",
+        "CollectOccurrencesByTag",
+        "ApplyQueuedMatchedTaggedOccurrencesActive",
+        "IsOccurrenceExcludedInActiveIAssemblyRow",
+        "SetMatchedTaggedOccurrenceActive",
+        "```",
+        "",
+        "Duplicate functions usually happen after pasting helper code more than once.",
+        "",
+        "## Troubleshooting iAssembly include or exclude",
+        "",
+        "If an iAssembly occurrence does not include or exclude, test the command directly.",
+        "",
+        "Expected behavior when currently excluded:",
+        "",
+        "```text",
+        "Excluded before: True",
+        "Excluded after: False",
+        "```",
+        "",
+        "Expected behavior when currently included:",
+        "",
+        "```text",
+        "Excluded before: False",
+        "Excluded after: True",
+        "```",
+        "",
+        "If this direct toggle works, generated replay should use the same `ExcludeCtxCmd` toggle path.",
+        "",
+        "If direct toggle fails, verify the occurrence is selectable and that the active document is the iAssembly factory.",
+        "",
+        "## Troubleshooting generated code missing queue logic",
+        "",
+        "If generated replay code still suppresses or unsuppresses one item at a time, replace `GetGeneratedHelperCode` with the version that emits these functions:",
+        "",
+        "```text",
+        "CollectOccurrencesByTag",
+        "ApplyQueuedMatchedTaggedOccurrencesActive",
+        "```",
+        "",
+        "Then regenerate the replay code.",
+        "",
+        "## Troubleshooting missing external rule directory",
+        "",
+        "Feature replay against referenced parts requires an external iLogic rule directory.",
+        "",
+        "The helper reads:",
+        "",
+        "```vb",
+        "iLogicVb.Automation.FileOptions.ExternalRuleDirectories",
+        "```",
+        "",
+        "If no valid directory exists, feature replay cannot create the temporary rule.",
+        "",
+        "Set an external rule directory in Inventor iLogic configuration before using generated feature replay.",
+        "",
+        "## Maintenance rules",
+        "",
+        "1. Keep tag based targeting as the core behavior.",
+        "2. Do not convert occurrence actions to name based targeting.",
+        "3. Keep normal assembly and iAssembly logic separate.",
+        "4. Keep `ExcludeCtxCmd` as the iAssembly toggle method.",
+        "5. Keep queued occurrence processing in generated replay code.",
+        "6. Keep the one by one fallback for failed queued toggles.",
+        "7. Do not reintroduce direct iAssembly table cell assignment.",
+        "8. Do not reintroduce `occ.Excluded`.",
+        "9. Do not generate old unsafe unsuppress helpers.",
+        "10. Keep generated code self contained.",
+        "",
+        "## Current best known occurrence logic",
+        "",
+        "The current best known occurrence logic is:",
+        "",
+        "```text",
+        "Find tagged occurrence documents",
+        "Queue the matching occurrences",
+        "For normal assemblies, call Suppress or Unsuppress",
+        "For iAssemblies, compare IsExcluded to wanted state",
+        "Multi select occurrences that need toggling",
+        "Run ExcludeCtxCmd once",
+        "Verify",
+        "Fallback one by one only where needed",
+        "Update and save once",
+        "```",
+        "",
+        "## Current best known iAssembly rule",
+        "",
+        "Use `ExcludeCtxCmd` as a toggle.",
+        "",
+        "Never run it blindly.",
+        "",
+        "Always check `IsExcluded` before running it.",
+        "",
+        "Always verify `IsExcluded` after running it.",
+        "",
+        "## Current best known generated replay rule",
+        "",
+        "Generated replay should be fully self contained.",
+        "",
+        "It should not depend on the original recorder rule.",
+        "",
+        "It should include all tag helpers, document helpers, occurrence helpers, queue helpers, iAssembly helpers, feature helpers, and external rule directory helpers.",
+        "",
+        "## End of internal reference"
+    }
 
-    helpText &= "Internal CAD Tag Action Recorder" & vbCrLf
-    helpText &= "===============================" & vbCrLf & vbCrLf
-
-    helpText &= "Purpose" & vbCrLf
-    helpText &= "-------" & vbCrLf
-    helpText &= "This tool stores an internal CAD tag on parts or assemblies, then uses that tag later to find and control files." & vbCrLf
-    helpText &= "The recorded steps can generate replayable iLogic code that runs the same actions again." & vbCrLf & vbCrLf
-
-    helpText &= "Stored tag structure" & vbCrLf
-    helpText &= "--------------------" & vbCrLf
-    helpText &= "AttributeSet: " & tagNs & vbCrLf
-    helpText &= "Attribute:    " & tagKey & vbCrLf
-    helpText &= "Value:        User selected tag name" & vbCrLf & vbCrLf
-
-    helpText &= "Recorder workflow" & vbCrLf
-    helpText &= "-----------------" & vbCrLf
-    helpText &= "1. Type or detect a tag." & vbCrLf
-    helpText &= "2. Press SUPPRESS OCC, UNSUPPRESS OCC, SUPPRESS FEATURE, or UNSUPPRESS FEATURE." & vbCrLf
-    helpText &= "3. Each action is written to:" & vbCrLf
-    helpText &= IO.Path.Combine(IO.Path.GetTempPath(), "InternalCadTag_ActionRecorder.txt") & vbCrLf
-    helpText &= "4. Press SHOW GENERATED CODE to create a copyable iLogic rule." & vbCrLf & vbCrLf
-
-    helpText &= "Important feature behavior" & vbCrLf
-    helpText &= "--------------------------" & vbCrLf
-    helpText &= "Part level feature suppression uses:" & vbCrLf
-    helpText &= "Feature.IsActive(""FeatureName"") = False" & vbCrLf
-    helpText &= "Feature.IsActive(""FeatureName"") = True" & vbCrLf & vbCrLf
-
-    helpText &= "Assembly level feature replay uses a temporary external iLogic rule." & vbCrLf
-    helpText &= "The assembly finds tagged parts, writes a temp external rule, then runs that rule against each tagged part document." & vbCrLf & vbCrLf
-
-    helpText &= "SNIPPETS FOR AI OR USER REFERENCE" & vbCrLf
-    helpText &= "=================================" & vbCrLf & vbCrLf
-
-    helpText &= "1. Basic tag lookup helper" & vbCrLf
-    helpText &= "--------------------------" & vbCrLf
-    helpText &= _
-"Private Function HasTagValue(o As Object, ns As String, key As String, wantedValue As String) As Boolean" & vbCrLf & _
-"    Dim actualValue As String = GetTagValue(o, ns, key)" & vbCrLf & _
-"    If String.IsNullOrWhiteSpace(actualValue) Then" & vbCrLf & _
-"        HasTagValue = False" & vbCrLf & _
-"    Else" & vbCrLf & _
-"        HasTagValue = String.Compare(actualValue, wantedValue, True) = 0" & vbCrLf & _
-"    End If" & vbCrLf & _
-"End Function" & vbCrLf & vbCrLf
-
-    helpText &= "2. Find tagged parts in an assembly" & vbCrLf
-    helpText &= "----------------------------------" & vbCrLf
-    helpText &= _
-"Dim asm As INV.AssemblyDocument = TryCast(ThisApplication.ActiveDocument, INV.AssemblyDocument)" & vbCrLf & _
-"If asm Is Nothing Then Exit Sub" & vbCrLf & vbCrLf & _
-"Dim wantedTag As String = ""antenna_cap""" & vbCrLf & vbCrLf & _
-"For Each d As INV.Document In asm.AllReferencedDocuments" & vbCrLf & _
-"    If d Is Nothing Then Continue For" & vbCrLf & _
-"    If d.DocumentType <> INV.DocumentTypeEnum.kPartDocumentObject Then Continue For" & vbCrLf & vbCrLf & _
-"    Dim p As INV.PartDocument = TryCast(d, INV.PartDocument)" & vbCrLf & _
-"    If p Is Nothing Then Continue For" & vbCrLf & vbCrLf & _
-"    If HasTagValue(p, ""INTERNAL_CAD_TAG"", ""TagName"", wantedTag) OrElse HasTagValue(p.ComponentDefinition, ""INTERNAL_CAD_TAG"", ""TagName"", wantedTag) Then" & vbCrLf & _
-"        WF.MessageBox.Show(""Tagged part found:"" & vbCrLf & p.FullFileName)" & vbCrLf & _
-"    End If" & vbCrLf & _
-"Next" & vbCrLf & vbCrLf
-
-    helpText &= "3. Suppress tagged occurrences in an assembly" & vbCrLf
-    helpText &= "------------------------------------------" & vbCrLf
-    helpText &= _
-"Dim asm As INV.AssemblyDocument = TryCast(ThisApplication.ActiveDocument, INV.AssemblyDocument)" & vbCrLf & _
-"If asm Is Nothing Then Exit Sub" & vbCrLf & vbCrLf & _
-"Dim wantedTag As String = ""antenna_cap""" & vbCrLf & vbCrLf & _
-"For Each occ As INV.ComponentOccurrence In asm.ComponentDefinition.Occurrences" & vbCrLf & _
-"    Dim occDoc As INV.Document = Nothing" & vbCrLf & _
-"    Try" & vbCrLf & _
-"        occDoc = occ.Definition.Document" & vbCrLf & _
-"    Catch" & vbCrLf & _
-"        occDoc = Nothing" & vbCrLf & _
-"    End Try" & vbCrLf & vbCrLf & _
-"    If occDoc IsNot Nothing Then" & vbCrLf & _
-"        If HasTagValue(occDoc, ""INTERNAL_CAD_TAG"", ""TagName"", wantedTag) Then" & vbCrLf & _
-"            occ.Suppress()" & vbCrLf & _
-"        End If" & vbCrLf & _
-"    End If" & vbCrLf & _
-"Next" & vbCrLf & vbCrLf
-
-    helpText &= "4. Unsuppress tagged occurrences in an assembly" & vbCrLf
-    helpText &= "--------------------------------------------" & vbCrLf
-    helpText &= _
-"Dim asm As INV.AssemblyDocument = TryCast(ThisApplication.ActiveDocument, INV.AssemblyDocument)" & vbCrLf & _
-"If asm Is Nothing Then Exit Sub" & vbCrLf & vbCrLf & _
-"Dim wantedTag As String = ""antenna_cap""" & vbCrLf & vbCrLf & _
-"For Each occ As INV.ComponentOccurrence In asm.ComponentDefinition.Occurrences" & vbCrLf & _
-"    If occ.Suppressed Then" & vbCrLf & _
-"        occ.Unsuppress()" & vbCrLf & _
-"    End If" & vbCrLf & _
-"Next" & vbCrLf & vbCrLf
-
-    helpText &= "5. Suppress a feature in the active part" & vbCrLf
-    helpText &= "--------------------------------------" & vbCrLf
-    helpText &= _
-"Dim p As INV.PartDocument = TryCast(ThisApplication.ActiveDocument, INV.PartDocument)" & vbCrLf & _
-"If p Is Nothing Then Exit Sub" & vbCrLf & vbCrLf & _
-"Dim wantedTag As String = ""antenna_cap""" & vbCrLf & _
-"Dim featureName As String = ""Extrusion12""" & vbCrLf & vbCrLf & _
-"If HasTagValue(p, ""INTERNAL_CAD_TAG"", ""TagName"", wantedTag) OrElse HasTagValue(p.ComponentDefinition, ""INTERNAL_CAD_TAG"", ""TagName"", wantedTag) Then" & vbCrLf & _
-"    Feature.IsActive(featureName) = False" & vbCrLf & _
-"End If" & vbCrLf & vbCrLf
-
-    helpText &= "6. Unsuppress a feature in the active part" & vbCrLf
-    helpText &= "----------------------------------------" & vbCrLf
-    helpText &= _
-"Dim p As INV.PartDocument = TryCast(ThisApplication.ActiveDocument, INV.PartDocument)" & vbCrLf & _
-"If p Is Nothing Then Exit Sub" & vbCrLf & vbCrLf & _
-"Dim wantedTag As String = ""antenna_cap""" & vbCrLf & _
-"Dim featureName As String = ""Extrusion12""" & vbCrLf & vbCrLf & _
-"If HasTagValue(p, ""INTERNAL_CAD_TAG"", ""TagName"", wantedTag) OrElse HasTagValue(p.ComponentDefinition, ""INTERNAL_CAD_TAG"", ""TagName"", wantedTag) Then" & vbCrLf & _
-"    Feature.IsActive(featureName) = True" & vbCrLf & _
-"End If" & vbCrLf & vbCrLf
-
-    helpText &= "7. Assembly level feature control pattern" & vbCrLf
-    helpText &= "----------------------------------------" & vbCrLf
-    helpText &= _
-"' Assembly rules cannot reliably use Feature.IsActive against referenced part features directly." & vbCrLf & _
-"' The proven method is:" & vbCrLf & _
-"' 1. Find the tagged referenced part." & vbCrLf & _
-"' 2. Write a temporary external iLogic rule into an existing external rule folder." & vbCrLf & _
-"' 3. Run that external rule on the tagged part document." & vbCrLf & _
-"' 4. Delete the temporary external rule." & vbCrLf & vbCrLf & _
-"Dim changedCount As Integer = SetFeatureActiveByTag(asm, ""INTERNAL_CAD_TAG"", ""TagName"", ""antenna_cap"", ""Extrusion12"", False)" & vbCrLf & vbCrLf
-
-    helpText &= "8. Temporary external rule body used for part feature control" & vbCrLf
-    helpText &= "----------------------------------------------------------" & vbCrLf
-    helpText &= _
-"Dim ruleText As String = """"" & vbCrLf & _
-"ruleText &= ""Sub Main()"" & vbCrLf" & vbCrLf & _
-"ruleText &= ""    Feature.IsActive("""""" & featureName & """""") = "" & If(activeState, ""True"", ""False"") & vbCrLf" & vbCrLf & _
-"ruleText &= ""End Sub"" & vbCrLf" & vbCrLf
-
-    helpText &= "9. Transaction wrapper for replay code" & vbCrLf
-    helpText &= "-------------------------------------" & vbCrLf
-    helpText &= _
-"Dim txn As INV.Transaction = Nothing" & vbCrLf & vbCrLf & _
-"Try" & vbCrLf & _
-"    txn = ThisApplication.TransactionManager.StartTransaction(ThisApplication.ActiveDocument, ""Internal CAD Tag Replay"")" & vbCrLf & vbCrLf & _
-"    ' Run generated actions here" & vbCrLf & vbCrLf & _
-"    txn.End()" & vbCrLf & _
-"    txn = Nothing" & vbCrLf & vbCrLf & _
-"    InventorVb.DocumentUpdate(True)" & vbCrLf & vbCrLf & _
-"Catch ex As Exception" & vbCrLf & _
-"    If txn IsNot Nothing Then" & vbCrLf & _
-"        Try" & vbCrLf & _
-"            txn.Abort()" & vbCrLf & _
-"        Catch" & vbCrLf & _
-"        End Try" & vbCrLf & _
-"    End If" & vbCrLf & _
-"    WF.MessageBox.Show(ex.Message, ""Internal CAD Tag Replay Error"")" & vbCrLf & _
-"End Try" & vbCrLf & vbCrLf
-
-    helpText &= "10. Suggested AI prompt" & vbCrLf
-    helpText &= "----------------------" & vbCrLf
-    helpText &= "I am using Autodesk Inventor iLogic. I have parts and assemblies tagged with an AttributeSet named INTERNAL_CAD_TAG and an Attribute named TagName. I want to find files by that tag and run recorded actions against them. Occurrence actions happen in the assembly. Feature actions must run in the part context. For assembly level feature control, write a temporary external iLogic rule into an existing external rule directory and call iLogicVb.Automation.RunExternalRule(partDocument, ruleName)." & vbCrLf & vbCrLf
-
-    helpText &= "Current tag namespace: " & tagNs & vbCrLf
-    helpText &= "Current tag key: " & tagKey & vbCrLf
+    Dim helpText As String = String.Join(vbCrLf, helpLines)
 
     Dim resultForm As New WF.Form()
-    resultForm.Text = "Internal CAD Tag Help"
+    resultForm.Text = "Internal CAD Tag Code Help"
     resultForm.StartPosition = WF.FormStartPosition.CenterParent
-    resultForm.Width = 1000
-    resultForm.Height = 720
+    resultForm.Width = 1100
+    resultForm.Height = 800
 
     Dim resultBox As New WF.TextBox()
     resultBox.Multiline = True
-    resultBox.ReadOnly = True
+    resultBox.ReadOnly = False
     resultBox.ScrollBars = WF.ScrollBars.Both
     resultBox.WordWrap = False
     resultBox.Dock = WF.DockStyle.Fill
